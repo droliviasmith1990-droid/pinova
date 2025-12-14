@@ -33,6 +33,9 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
     const isUpdatingFromFabric = useRef(false);
     const [isCanvasReady, setIsCanvasReady] = useState(false);
 
+    // ✅ FIX: Add render version to cancel stale async renders
+    const renderVersionRef = useRef(0);
+
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; isOpen: boolean }>({ x: 0, y: 0, isOpen: false });
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editingText, setEditingText] = useState<string>("");
@@ -208,13 +211,20 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
     }, [initCanvas]);
 
     // ============================================
-    // Rendering Loop
+    // Rendering Loop - With Debounce & Cancellation
     // ============================================
     useEffect(() => {
         if (!fabricCanvasRef.current || !isCanvasReady || isUpdatingFromFabric.current) return;
 
-        const render = async () => {
-            if (!fabricCanvasRef.current) return;
+        // ✅ FIX: Increment version to cancel any in-flight renders
+        const currentVersion = ++renderVersionRef.current;
+
+        // Debounce to coalesce rapid element additions
+        const timeoutId = setTimeout(async () => {
+            // Check if this render is still current
+            if (renderVersionRef.current !== currentVersion || !fabricCanvasRef.current) {
+                return; // Stale render - abort
+            }
 
             // Call Shared Engine
             await renderTemplate(
@@ -225,17 +235,23 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 {}
             );
 
+            // Check again after async operation
+            if (renderVersionRef.current !== currentVersion || !fabricCanvasRef.current) {
+                return; // Became stale during render
+            }
+
             // Restore Selection Logic
             if (selectedIds.length > 0) {
                 const objs = fabricCanvasRef.current.getObjects();
                 const active = objs.find(o => getElementId(o) === selectedIds[0]);
                 if (active) {
                     fabricCanvasRef.current.setActiveObject(active);
-                    fabricCanvasRef.current.requestRenderAll(); // Force paint handles
+                    fabricCanvasRef.current.requestRenderAll();
                 }
             }
-        };
-        render();
+        }, 16); // ~60fps debounce (one frame)
+
+        return () => clearTimeout(timeoutId);
     }, [elements, backgroundColor, canvasWidth, canvasHeight, isCanvasReady, previewMode, selectedIds]);
 
     // Sync Zoom Effect (Separate from init)
