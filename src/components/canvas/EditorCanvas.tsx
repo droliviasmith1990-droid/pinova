@@ -25,7 +25,8 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
 
-    // Use refs for mutable data accessed inside event listeners to avoid stale closures
+    // ✅ FIX: Use refs for mutable data to remove them from initCanvas dependencies
+    // This prevents the canvas from being destroyed/recreated on every update
     const elementsRef = useRef<Element[]>([]);
     const editingTextRef = useRef<string>("");
 
@@ -64,7 +65,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         }))
     );
 
-    // Keep refs in sync
+    // Keep refs in sync with store/state
     useEffect(() => { elementsRef.current = elements; }, [elements]);
     useEffect(() => { editingTextRef.current = editingText; }, [editingText]);
 
@@ -72,17 +73,20 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
     const canvasHeight = canvasSize.height;
 
     // ============================================
-    // Canvas Initialization
+    // Canvas Initialization 
     // ============================================
     const initCanvas = useCallback(async () => {
         if (!canvasElRef.current) return;
 
+        // Cleanup existing canvas
         if (fabricCanvasRef.current) {
             fabricCanvasRef.current.off();
             fabricCanvasRef.current.clear();
             fabricCanvasRef.current.dispose();
             fabricCanvasRef.current = null;
         }
+
+        // Small delay to ensure DOM is ready/clean
         await new Promise(resolve => setTimeout(resolve, 50));
 
         const canvas = new fabric.Canvas(canvasElRef.current, {
@@ -99,6 +103,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         setIsCanvasReady(true);
 
         // --- Event Listeners ---
+        // We use refs (elementsRef) to access latest data without triggering re-init
 
         canvas.on('selection:created', (e) => {
             if (isUpdatingFromFabric.current) return;
@@ -140,6 +145,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         canvas.on('mouse:dblclick', (e) => {
             const obj = e.target;
             const id = obj ? getElementId(obj) : null;
+            // Use ref to find element without stale closure
             const el = elementsRef.current.find(e => e.id === id);
 
             if (el && el.type === 'text' && !el.locked) {
@@ -158,7 +164,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 setContextMenu(prev => ({ ...prev, isOpen: false }));
             }
             if (editingId) {
-                // Clicked outside - save
+                // Clicked outside - save using ref data
                 const el = elementsRef.current.find(e => e.id === editingId);
                 if (el && el.type === 'text') {
                     updateElement(editingId, { text: editingTextRef.current });
@@ -168,6 +174,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
             }
         });
 
+        // ✅ FIX: Use functional update for zoom to avoid dependency loop
         canvas.on('mouse:wheel', (opt) => {
             if (opt.e.ctrlKey || opt.e.metaKey) {
                 opt.e.preventDefault();
@@ -176,7 +183,6 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 const scaleBy = 1.1;
                 const dir = delta > 0 ? -1 : 1;
 
-                // ✅ FINAL FIX: Functional update to prevent stale zoom closure
                 setZoom(prevZoom => {
                     const newZoom = dir > 0 ? prevZoom * scaleBy : prevZoom / scaleBy;
                     return Math.max(0.1, Math.min(3, newZoom));
@@ -185,9 +191,9 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         });
 
     }, [canvasWidth, canvasHeight, backgroundColor, selectElement, updateElement,
-        pushHistory, setFabricRef, setZoom]); // ✅ Stable Dependencies
+        pushHistory, setFabricRef, setZoom]); // ✅ Stable Dependencies: NO 'elements' or 'zoom' value
 
-    // Init Effect
+    // Initial Load Effect
     useEffect(() => {
         initCanvas();
         return () => {
@@ -201,12 +207,16 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         };
     }, [initCanvas]);
 
+    // ============================================
     // Rendering Loop
+    // ============================================
     useEffect(() => {
         if (!fabricCanvasRef.current || !isCanvasReady || isUpdatingFromFabric.current) return;
 
         const render = async () => {
             if (!fabricCanvasRef.current) return;
+
+            // Call Shared Engine
             await renderTemplate(
                 fabricCanvasRef.current,
                 elements,
@@ -215,20 +225,20 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 {}
             );
 
-            // Restore Selection & Repaint
+            // Restore Selection Logic
             if (selectedIds.length > 0) {
                 const objs = fabricCanvasRef.current.getObjects();
                 const active = objs.find(o => getElementId(o) === selectedIds[0]);
                 if (active) {
                     fabricCanvasRef.current.setActiveObject(active);
-                    fabricCanvasRef.current.requestRenderAll();
+                    fabricCanvasRef.current.requestRenderAll(); // Force paint handles
                 }
             }
         };
         render();
     }, [elements, backgroundColor, canvasWidth, canvasHeight, isCanvasReady, previewMode, selectedIds]);
 
-    // Sync Zoom
+    // Sync Zoom Effect (Separate from init)
     useEffect(() => {
         if (!fabricCanvasRef.current || !isCanvasReady) return;
         fabricCanvasRef.current.setZoom(zoom);
@@ -251,8 +261,10 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
             style={{ minWidth: (canvasWidth * zoom) + CANVAS_PADDING * 2, minHeight: (canvasHeight * zoom) + CANVAS_PADDING * 2, padding: 0 }}
             onContextMenu={(e) => e.preventDefault()}
         >
+            {/* Background */}
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#e5e7eb' }} />
 
+            {/* Canvas Container */}
             <div style={{
                 position: 'relative', marginLeft: CANVAS_PADDING, marginTop: CANVAS_PADDING,
                 width: canvasWidth * zoom, height: canvasHeight * zoom,
@@ -261,6 +273,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 <canvas ref={canvasElRef} />
             </div>
 
+            {/* Text Editor Overlay */}
             {editingElement && (
                 <textarea
                     ref={textAreaRef}
