@@ -55,7 +55,7 @@ export const DEFAULT_GENERATION_SETTINGS: GenerationSettings = {
 interface GenerationControllerProps {
     campaignId: string;
     userId: string;
-    campaignName: string;
+
     templateElements: Element[];
     canvasSize: CanvasSize;
     backgroundColor: string;
@@ -76,7 +76,7 @@ interface GenerationControllerProps {
 export function GenerationController({
     campaignId,
     userId,
-    campaignName,
+
     templateElements,
     canvasSize,
     backgroundColor,
@@ -366,8 +366,21 @@ export function GenerationController({
                     }
 
                 } catch (error) {
+                    // FAIL-SAFE: Log error, mark pin as failed, and CONTINUE to next pin
                     console.error(`Failed to render pin ${rowIndex}:`, error);
-                    errors.push({ rowIndex, error: error instanceof Error ? error.message : 'Unknown error' });
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                    errors.push({ rowIndex, error: errorMessage });
+
+                    // Report failed pin to UI immediately so it appears in the list
+                    onPinGenerated({
+                        id: `${campaignId}-${rowIndex}`,
+                        rowIndex,
+                        imageUrl: '',
+                        status: 'failed',
+                        errorMessage,
+                        csvData: csvData[rowIndex],
+                    });
+                    // Loop continues to next pin - no crash
                 }
 
                 current++;

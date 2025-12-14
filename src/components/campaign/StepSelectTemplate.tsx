@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Layout, Loader2, Check, Plus, Sparkles, Eye } from 'lucide-react';
+import { Layout, Check, Plus, Sparkles, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCampaignWizard } from '@/lib/campaigns/CampaignWizardContext';
 import { getTemplates, TemplateListItem } from '@/lib/db/templates';

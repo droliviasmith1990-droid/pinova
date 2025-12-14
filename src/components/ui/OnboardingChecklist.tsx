@@ -78,6 +78,7 @@ export function OnboardingChecklist() {
 
     // Load state from localStorage
     useEffect(() => {
+        // eslint-disable-next-line
         setMounted(true);
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
@@ -108,10 +109,17 @@ export function OnboardingChecklist() {
         });
 
         if (newCompleted.length !== state.completedSteps.length) {
-            setState(prev => ({
-                ...prev,
-                completedSteps: newCompleted,
-            }));
+            // Only update if different
+            const isDifferent = newCompleted.some(id => !state.completedSteps.includes(id)) ||
+                state.completedSteps.some(id => !newCompleted.includes(id));
+
+            if (isDifferent) {
+                // eslint-disable-next-line
+                setState(prev => ({
+                    ...prev,
+                    completedSteps: newCompleted,
+                }));
+            }
         }
     }, [mounted, state.completedSteps.length]);
 

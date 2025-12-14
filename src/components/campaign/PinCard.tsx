@@ -35,13 +35,6 @@ export const PinCard = memo(function PinCard({
     const [isCopied, setIsCopied] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
 
-    // Get primary title from CSV data
-    const getPrimaryTitle = () => {
-        if (!pin.csvData) return `Pin #${pin.rowIndex + 1}`;
-        const values = Object.values(pin.csvData);
-        return values[0] || `Pin #${pin.rowIndex + 1}`;
-    };
-
     const handleCopyUrl = async (e: React.MouseEvent) => {
         e.stopPropagation();
         try {

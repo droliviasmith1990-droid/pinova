@@ -18,18 +18,25 @@ interface ImageElementComponentProps {
 // Custom hook to load image
 function useImage(url: string | undefined): [HTMLImageElement | null, string] {
     const [image, setImage] = useState<HTMLImageElement | null>(null);
-    const [status, setStatus] = useState<string>('loading');
+    const [status, setStatus] = useState<string>(!url ? 'empty' : 'loading');
+    const [prevUrl, setPrevUrl] = useState<string | undefined>(url);
+
+    // Derived state pattern: Reset state when URL changes during render
+    if (url !== prevUrl) {
+        setPrevUrl(url);
+        setImage(null);
+        setStatus(!url ? 'empty' : 'loading');
+    }
 
     useEffect(() => {
         if (!url) {
-            setImage(null);
-            setStatus('empty');
             return;
         }
 
-        let cancelled = false;
         const img = new window.Image();
         img.crossOrigin = 'anonymous';
+
+        let cancelled = false;
 
         img.onload = () => {
             if (!cancelled) {
@@ -53,6 +60,9 @@ function useImage(url: string | undefined): [HTMLImageElement | null, string] {
             img.onerror = null;
         };
     }, [url]);
+
+    // Derived state for empty URL to return immediately
+    if (!url) return [null, 'empty'];
 
     return [image, status];
 }

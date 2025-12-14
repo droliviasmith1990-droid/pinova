@@ -29,6 +29,7 @@ export function DynamicFieldTooltip({
 
         const dismissed = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (dismissed === 'true') {
+            // eslint-disable-next-line
             setIsDismissed(true);
             return;
         }
@@ -143,7 +144,7 @@ export function DynamicFieldTooltip({
                             <span className="font-semibold text-sm">Make this Dynamic</span>
                         </div>
                         <p className="text-sm text-gray-300 leading-relaxed mb-4">
-                            When enabled, this element's content will be replaced with data from your CSV.
+                            When enabled, this element&apos;s content will be replaced with data from your CSV.
                             Perfect for product titles, prices, or images that change per pin.
                         </p>
                         <button

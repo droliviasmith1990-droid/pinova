@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
-import { Upload, FileSpreadsheet, X, Eye, AlertCircle, Check, Link2, Loader2, HelpCircle, ChevronDown, ChevronUp, FileText, Clock, Table } from 'lucide-react';
+import { Upload, FileSpreadsheet, X, Eye, AlertCircle, Check, Link2, Loader2, HelpCircle, ChevronDown, ChevronUp, FileText, Table } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCampaignWizard } from '@/lib/campaigns/CampaignWizardContext';
 import { parseCSVFile, getPreviewRows } from '@/lib/utils/csvParser';
@@ -357,8 +357,8 @@ export function StepUploadCSV() {
                                 <ol className="list-decimal list-inside space-y-2">
                                     <li>Open your Google Sheet</li>
                                     <li>Click: <strong>File → Share → Publish to web</strong></li>
-                                    <li>Select your sheet and choose <strong>"Comma-separated values (.csv)"</strong></li>
-                                    <li>Click <strong>"Publish"</strong></li>
+                                    <li>Select your sheet and choose <strong>&quot;Comma-separated values (.csv)&quot;</strong></li>
+                                    <li>Click <strong>&quot;Publish&quot;</strong></li>
                                     <li>Copy the generated URL and paste it above</li>
                                 </ol>
                                 <p className="text-gray-500 mt-3 text-xs">
@@ -393,13 +393,16 @@ export function StepUploadCSV() {
                                         <Table className="w-4 h-4 text-gray-400" />
                                         <span><strong>{csvData.rowCount}</strong> rows</span>
                                     </div>
+                                    <p className="text-xs text-gray-500 mt-2">
+                                        Your CSV file should have columns for each variable field in your template
+                                        (e.g., &quot;Title&quot;, &quot;Description&quot;, &quot;Image URL&quot;).
+                                    </p>
                                     <div className="flex items-center gap-1.5 text-sm text-gray-600">
                                         <FileText className="w-4 h-4 text-gray-400" />
                                         <span><strong>{csvData.headers.length}</strong> columns</span>
                                     </div>
                                 </div>
 
-                                {/* Column Preview */}
                                 <div className="flex flex-wrap gap-1.5 mt-2">
                                     {csvData.headers.slice(0, 6).map((header, i) => (
                                         <span

@@ -240,7 +240,7 @@ export default function CampaignDetailPage() {
         setDeleteProgress({ current: 0, total: idsToDelete.length });
 
         let successCount = 0;
-        let failedIds: string[] = [];
+        const failedIds: string[] = [];
 
         try {
             for (let i = 0; i < idsToDelete.length; i++) {

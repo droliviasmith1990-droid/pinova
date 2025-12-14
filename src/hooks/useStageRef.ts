@@ -30,7 +30,7 @@ export function useCreateStageRef() {
 }
 
 // Hook to access the stage ref (used in Header and other components)
-export function useStageRef(): Konva.Stage | null {
+export function useStageRef(): MutableRefObject<Konva.Stage | null> | null {
     const stageRef = useStageRefStore((s) => s.stageRef);
-    return stageRef?.current || null;
+    return stageRef;
 }

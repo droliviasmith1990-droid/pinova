@@ -20,11 +20,33 @@ function CanvasLoading() {
     );
 }
 
+// Ruler marker component
+const RulerMarkers = ({ direction, size }: { direction: 'horizontal' | 'vertical'; size: number }) => {
+    const markers = [];
+    const step = 100;
+
+    for (let i = 0; i <= Math.max(size, 2000); i += step) {
+        markers.push(
+            <div
+                key={i}
+                className="absolute text-[9px] text-gray-500 font-mono"
+                style={direction === 'horizontal'
+                    ? { left: i, top: 2 }
+                    : { top: i, left: 2, writingMode: 'vertical-rl', transform: 'rotate(180deg)' }
+                }
+            >
+                {i}
+            </div>
+        );
+    }
+    return <>{markers}</>;
+};
+
 export function CanvasArea() {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-    const [hasAutoFitted, setHasAutoFitted] = useState(false);
+    const hasAutoFitted = useRef(false);
 
     // Pan mode state
     const [isPanMode, setIsPanMode] = useState(false);
@@ -123,41 +145,19 @@ export function CanvasArea() {
         const rect = updateDimensions();
 
         // Auto-fit zoom on first mount
-        if (rect && !hasAutoFitted) {
+        if (rect && !hasAutoFitted.current) {
             const fitZoom = calculateFitZoom(rect.width - 24, rect.height - 48);
             setZoom(fitZoom);
-            setHasAutoFitted(true);
+            hasAutoFitted.current = true;
         }
 
         window.addEventListener('resize', updateDimensions);
         return () => window.removeEventListener('resize', updateDimensions);
-    }, [hasAutoFitted, calculateFitZoom, setZoom]);
+    }, [calculateFitZoom, setZoom]);
 
     // Note: We intentionally don't auto-recalculate zoom when canvas size changes
     // This preserves the user's manual zoom setting. The user can use "Fit to Screen" 
     // button if they want to reset zoom after changing canvas size.
-
-    // Ruler marker component
-    const RulerMarkers = ({ direction, size }: { direction: 'horizontal' | 'vertical'; size: number }) => {
-        const markers = [];
-        const step = 100;
-
-        for (let i = 0; i <= Math.max(size, 2000); i += step) {
-            markers.push(
-                <div
-                    key={i}
-                    className="absolute text-[9px] text-gray-500 font-mono"
-                    style={direction === 'horizontal'
-                        ? { left: i, top: 2 }
-                        : { top: i, left: 2, writingMode: 'vertical-rl', transform: 'rotate(180deg)' }
-                    }
-                >
-                    {i}
-                </div>
-            );
-        }
-        return <>{markers}</>;
-    };
 
     // Cursor style based on pan mode
     const getCursorStyle = () => {

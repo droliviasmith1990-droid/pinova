@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
 
         // PERFORMANCE: Stream upload instead of buffering entire file in memory
         // Convert Web Stream to Node.js Readable stream for AWS SDK
-        const fileStream = Readable.fromWeb(file.stream() as any);
+        const fileStream = Readable.fromWeb(file.stream() as unknown as import('stream/web').ReadableStream);
 
         // Use @aws-sdk/lib-storage Upload for better streaming support
         const upload = new Upload({

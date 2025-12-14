@@ -9,7 +9,6 @@ import {
     ChevronRight, ArrowUpFromLine, ArrowDownFromLine, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Element } from '@/types/editor';
 
 interface ContextMenuProps {
     x: number;
@@ -17,6 +16,44 @@ interface ContextMenuProps {
     isOpen: boolean;
     onClose: () => void;
 }
+
+interface MenuItemProps {
+    icon: React.ElementType;
+    label: string;
+    shortcut?: string;
+    onClick?: () => void;
+    disabled?: boolean;
+    hasSubmenu?: boolean;
+    isSubmenuTrigger?: boolean;
+    onMouseEnter?: () => void;
+}
+
+const MenuItem = ({
+    icon: Icon,
+    label,
+    shortcut,
+    onClick,
+    disabled = false,
+    hasSubmenu = false,
+    onMouseEnter
+}: MenuItemProps) => (
+    <button
+        className={cn(
+            "w-full flex items-center justify-between px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed group relative",
+            disabled && "opacity-50"
+        )}
+        onClick={onClick}
+        disabled={disabled}
+        onMouseEnter={onMouseEnter}
+    >
+        <div className="flex items-center gap-3">
+            <Icon className="w-4 h-4 text-gray-500" />
+            <span>{label}</span>
+        </div>
+        {hasSubmenu && <ChevronRight className="w-4 h-4 text-gray-400" />}
+        {shortcut && <span className="text-xs text-gray-400">{shortcut}</span>}
+    </button>
+);
 
 export function ContextMenu({ x, y, isOpen, onClose }: ContextMenuProps) {
     const menuRef = useRef<HTMLDivElement>(null);
@@ -66,33 +103,7 @@ export function ContextMenu({ x, y, isOpen, onClose }: ContextMenuProps) {
         onClose();
     };
 
-    const MenuItem = ({
-        icon: Icon,
-        label,
-        shortcut,
-        onClick,
-        disabled = false,
-        hasSubmenu = false,
-        isSubmenuTrigger = false,
-        onMouseEnter
-    }: any) => (
-        <button
-            className={cn(
-                "w-full flex items-center justify-between px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed group relative",
-                disabled && "opacity-50"
-            )}
-            onClick={onClick}
-            disabled={disabled}
-            onMouseEnter={onMouseEnter}
-        >
-            <div className="flex items-center gap-3">
-                <Icon className="w-4 h-4 text-gray-500" />
-                <span>{label}</span>
-            </div>
-            {hasSubmenu && <ChevronRight className="w-4 h-4 text-gray-400" />}
-            {shortcut && <span className="text-xs text-gray-400">{shortcut}</span>}
-        </button>
-    );
+    // MenuItem moved outside
 
     return (
         <div

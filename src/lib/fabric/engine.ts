@@ -22,13 +22,40 @@ const isNode = typeof window === 'undefined';
 // ============================================
 // Universal Image Loader Helper
 // ============================================
+
+/**
+ * Check if a URL is external (cross-origin) and needs proxy routing.
+ * Returns false for data URLs, relative URLs, and same-origin URLs.
+ */
+function isExternalUrl(urlStr: string): boolean {
+    if (!urlStr || urlStr.startsWith('data:')) return false;
+
+    try {
+        const parsed = new URL(urlStr, isNode ? undefined : window.location.origin);
+
+        // In browser, compare with window.location.origin
+        if (!isNode && typeof window !== 'undefined') {
+            return parsed.origin !== window.location.origin;
+        }
+
+        // In Node, all http(s) URLs are considered "external" (handled separately)
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+        // If URL parsing fails, assume it's a relative/local URL
+        return false;
+    }
+}
+
 /**
  * Handles loading images in both Browser (Client) and Node.js (Server) environments.
  * 
- * Problem: Fabric.js (via node-canvas) often fails to load external URLs directly 
- * due to security or context limitations in the Node environment.
+ * Problem: Browsers enforce strict CORS policies for images drawn onto a canvas.
+ * Even if an image loads visually, using it in Fabric can "taint" the canvas,
+ * causing toDataURL() exports to fail or blocking the load entirely.
  * 
- * Solution: Fetch the buffer manually, convert to Base64, and load as a Data URL.
+ * Solution:
+ * - Browser + External URL: Route through /api/proxy-image to bypass CORS
+ * - Node.js: Fetch buffer manually and convert to Base64 Data URL
  */
 async function loadImageToCanvas(
     url: string,
@@ -48,7 +75,12 @@ async function loadImageToCanvas(
             const base64 = buffer.toString('base64');
             const contentType = response.headers.get('content-type') || 'image/png';
             loadUrl = `data:${contentType};base64,${base64}`;
+        } else if (isExternalUrl(url)) {
+            // Browser + External URL: Route through proxy to bypass CORS
+            // The proxy fetches the image server-side and serves it from same origin
+            loadUrl = `/api/proxy-image?url=${encodeURIComponent(url)}`;
         }
+        // else: Browser + same-origin URL or data URL - use directly
 
         // Fabric v6 load from URL logic
         // returns a Promise that resolves to the image instance

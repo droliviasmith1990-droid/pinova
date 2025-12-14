@@ -52,9 +52,12 @@ export function EmptyCanvasState({ onAddText, onAddImage }: EmptyCanvasStateProp
                     </h2>
 
                     {/* Body Text */}
+                    <p className="text-gray-500 mb-8 max-w-sm mx-auto">
+                        Select a template to get started, or upload your own background image to create a pin from scratch.
+                    </p>
                     <p className="text-gray-600 max-w-[400px] mb-8 leading-relaxed">
                         Templates are reusable designs. Add elements and mark them as
-                        <span className="font-medium text-purple-600"> 'dynamic' </span>
+                        <span className="font-medium text-purple-600"> &apos;dynamic&apos; </span>
                         to replace with your CSV data.
                     </p>
 

@@ -16,7 +16,7 @@ jest.mock('fabric', () => {
         scaleY: 1,
     }));
 
-    (mockFabricImage as any).fromURL = jest.fn().mockResolvedValue({
+    (mockFabricImage as unknown as { fromURL: jest.Mock }).fromURL = jest.fn().mockResolvedValue({
         type: 'image',
         width: 100,
         height: 100,
@@ -58,7 +58,14 @@ global.fetch = jest.fn(() =>
 ) as jest.Mock;
 
 describe('Shared Engine (Node Environment)', () => {
-    let mockCanvas: any;
+    let mockCanvas: {
+        setDimensions: jest.Mock;
+        clear: jest.Mock;
+        add: jest.Mock;
+        renderAll: jest.Mock;
+        backgroundColor: string;
+        toDataURL: jest.Mock;
+    };
 
     beforeEach(() => {
         jest.clearAllMocks();
@@ -82,7 +89,8 @@ describe('Shared Engine (Node Environment)', () => {
                 backgroundColor: '#ffffff',
             };
 
-            await renderTemplate(mockCanvas, [], config);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await renderTemplate(mockCanvas as any, [], config);
 
             expect(mockCanvas.setDimensions).toHaveBeenCalledWith({ width: 1000, height: 1500 });
             expect(mockCanvas.backgroundColor).toBe('#ffffff');
@@ -164,7 +172,8 @@ describe('Shared Engine (Node Environment)', () => {
             const rowData = { title_col: 'Dynamic Title' };
             const fieldMapping: FieldMapping = { title: 'title_col' };
 
-            await renderTemplate(mockCanvas, elements, config, rowData, fieldMapping);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await renderTemplate(mockCanvas as any, elements, config, rowData, fieldMapping);
 
             expect(mockCanvas.add).toHaveBeenCalledTimes(1);
             const addedObject = mockCanvas.add.mock.calls[0][0];

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useCallback } from 'react';
-import { Stage, Layer, Rect, Line, Transformer, Path } from 'react-konva';
+import { Stage, Layer, Rect, Transformer, Path } from 'react-konva';
 import { KonvaEventObject } from 'konva/lib/Node';
 import Konva from 'konva';
 import { useEditorStore } from '@/stores/editorStore';
@@ -16,11 +16,14 @@ import {
     Element,
     TextElement,
     Guide,
-    CANVAS_WIDTH,
-    CANVAS_HEIGHT
 } from '@/types/editor';
 
 interface EditorCanvasProps {
+    // containerWidth and containerHeight are not used in this component,
+    // but are passed from the parent. Keeping them in the interface for now
+    // to avoid breaking changes in the parent component.
+    // If they are truly unused and can be removed, the interface and function signature
+    // should be updated accordingly.
     containerWidth: number;
     containerHeight: number;
 }
@@ -407,7 +410,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         if (element.locked) return;
 
         const shape = e.target;
-        let pos = { x: shape.x(), y: shape.y() };
+        const pos = { x: shape.x(), y: shape.y() };
 
         // Calculate guides for snapping
         const newGuides = calculateGuides(element, pos);
@@ -581,7 +584,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                                     key={element.id}
                                     element={element}
                                     isSelected={selectedIds.includes(element.id)}
-                                    onSelect={(e?: any) => handleSelect(element.id, e)}
+                                    onSelect={(e?: KonvaEventObject<MouseEvent>) => handleSelect(element.id, e)}
                                     onDblClick={() => {
                                         if (!element.locked) {
                                             setEditingId(element.id);
@@ -600,7 +603,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                                     key={element.id}
                                     element={element}
                                     isSelected={selectedIds.includes(element.id)}
-                                    onSelect={(e?: any) => handleSelect(element.id, e)}
+                                    onSelect={(e?: KonvaEventObject<MouseEvent>) => handleSelect(element.id, e)}
                                     onDragMove={(e) => handleDragMove(e, element)}
                                     onDragEnd={(e) => handleDragEnd(e, element)}
                                     onTransformEnd={(e) => handleTransformEnd(e, element)}
@@ -614,7 +617,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                                     key={element.id}
                                     element={element}
                                     isSelected={selectedIds.includes(element.id)}
-                                    onSelect={(e?: any) => handleSelect(element.id, e)}
+                                    onSelect={(e?: KonvaEventObject<MouseEvent>) => handleSelect(element.id, e)}
                                     onDragMove={(e) => handleDragMove(e, element)}
                                     onDragEnd={(e) => handleDragEnd(e, element)}
                                     onTransformEnd={(e) => handleTransformEnd(e, element)}

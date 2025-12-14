@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect } from 'react';
-import { Rect, Circle, Line, Arrow, Group, Path } from 'react-konva';
+import { Rect, Circle, Line, Arrow, Path } from 'react-konva';
 import { KonvaEventObject } from 'konva/lib/Node';
 import { ShapeElement as ShapeElementType } from '@/types/editor';
 
@@ -16,13 +16,20 @@ interface ShapeElementComponentProps {
 
 export function ShapeElementComponent({
     element,
-    isSelected,
     onSelect,
     onDragMove,
     onDragEnd,
     onTransformEnd
 }: ShapeElementComponentProps) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const shapeRef = useRef<any>(null);
+
+    // Use effect to cache complex paths for better performance
+    useEffect(() => {
+        if (element.shapeType === 'path' && shapeRef.current && element.name?.includes('Merged Path')) {
+            shapeRef.current.cache();
+        }
+    }, [element.pathData, element.shapeType, element.name]);
 
     const commonProps = {
         ref: shapeRef,
@@ -88,12 +95,7 @@ export function ShapeElementComponent({
             );
 
         case 'path':
-            // Use effect to cache complex paths for better performance
-            useEffect(() => {
-                if (shapeRef.current && element.name?.includes('Merged Path')) {
-                    shapeRef.current.cache();
-                }
-            }, [element.pathData]);
+            // Use effect moved to top level
 
             return (
                 <Path

@@ -188,7 +188,8 @@ export function FontLibraryPanel({ isOpen, onClose }: FontLibraryPanelProps) {
     const isTextSelected = selectedElement?.type === 'text';
 
     // Get stage ref for forcing canvas redraw after font loads
-    const stage = useStageRef();
+    const stageRef = useStageRef();
+    const stage = stageRef?.current;
 
     // Load user's saved fonts on mount
     useEffect(() => {

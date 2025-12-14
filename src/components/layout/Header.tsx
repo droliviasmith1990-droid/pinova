@@ -29,7 +29,8 @@ export function Header() {
     const resetToNewTemplate = useEditorStore((s) => s.resetToNewTemplate);
 
     // Access stage for thumbnail generation
-    const stage = useStageRef();
+    const stageRef = useStageRef();
+    const stage = stageRef?.current;
 
     // Auth context
     const router = useRouter();

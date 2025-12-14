@@ -2,8 +2,9 @@
 
 import React, { useState, useCallback, useRef } from 'react';
 import { nanoid } from 'nanoid';
-import { X, Upload, Image, FileType, Check, Loader2, AlertCircle } from 'lucide-react';
+import { X, Upload, Image, FileType, Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Element } from '@/types/editor';
 import { useEditorStore } from '@/stores/editorStore';
 import { toast } from 'sonner';
 
@@ -37,9 +38,9 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
     const [templateName, setTemplateName] = useState('');
     const [canvasWidth, setCanvasWidth] = useState(1000);
     const [canvasHeight, setCanvasHeight] = useState(1500);
-    const [isUploading, setIsUploading] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
-    const [importProgress, setImportProgress] = useState('');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_importProgress, setImportProgress] = useState('');
     const [lockBackground, setLockBackground] = useState(true);
     const [importMode, setImportMode] = useState<'merged' | 'separate'>('merged');
     const [dragOver, setDragOver] = useState(false);
@@ -123,10 +124,11 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
     };
 
     // Parse SVG to extract individual elements
-    const parseSvgToElements = async (svgContent: string): Promise<any[]> => {
+    const parseSvgToElements = async (svgContent: string): Promise<Element[]> => {
         const parser = new DOMParser();
         const doc = parser.parseFromString(svgContent, 'image/svg+xml');
-        const elements: any[] = [];
+        const elements: Element[] = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const textElements: any[] = []; // Track text elements separately for grouping
 
         // Get viewBox for scaling
@@ -279,6 +281,7 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
         });
 
         // Group text elements by proximity and style
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const groupedText: any[] = [];
         const used = new Set<number>();
 
@@ -346,8 +349,11 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
     };
 
     // Merge similar paths by color and style
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mergeSimilarPaths = (elements: any[]): any[] => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pathsByStyle = new Map<string, any[]>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const otherElements: any[] = [];
 
         // Group paths by their visual properties
@@ -363,6 +369,7 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
             }
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const mergedElements: any[] = [];
 
         // Merge paths with the same style

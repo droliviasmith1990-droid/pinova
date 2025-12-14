@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Link2, ChevronDown, AlertCircle, Check, Plus, Trash2, Image, Type, Info } from 'lucide-react';
+import { ChevronDown, AlertCircle, Check, Plus, Trash2, Image, Type, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCampaignWizard } from '@/lib/campaigns/CampaignWizardContext';
 import { autoMapFields } from '@/lib/utils/csvParser';
@@ -210,27 +210,6 @@ export function StepMapFields() {
         setFieldMapping(newMapping);
     }, [fieldMapping, setFieldMapping]);
 
-    if (!csvData) {
-        return (
-            <div className="text-center py-12 text-gray-500">
-                Please upload a CSV file first.
-            </div>
-        );
-    }
-
-    const getPreviewValue = (columnName: string): string => {
-        if (!csvData.rows[0] || !columnName) return '';
-        const value = csvData.rows[0][columnName] || '';
-        return value.length > 50 ? value.substring(0, 50) + '...' : value;
-    };
-
-    const isMapped = (field: string): boolean => {
-        return field in fieldMapping && fieldMapping[field] !== '';
-    };
-
-    const mappedCount = allFields.filter(f => isMapped(f.name)).length;
-    const requiredUnmapped = allFields.filter(f => f.required && !isMapped(f.name));
-
     // Close dropdown when clicking outside - using ref instead of blur
     const dropdownRef = React.useRef<HTMLDivElement>(null);
 
@@ -249,6 +228,27 @@ export function StepMapFields() {
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, [openDropdown]);
+
+    const getPreviewValue = (columnName: string): string => {
+        if (!csvData || !csvData.rows[0] || !columnName) return '';
+        const value = csvData.rows[0][columnName] || '';
+        return value.length > 50 ? value.substring(0, 50) + '...' : value;
+    };
+
+    const isMapped = (field: string): boolean => {
+        return field in fieldMapping && fieldMapping[field] !== '';
+    };
+
+    const mappedCount = allFields.filter(f => isMapped(f.name)).length;
+    const requiredUnmapped = allFields.filter(f => f.required && !isMapped(f.name));
+
+    if (!csvData) {
+        return (
+            <div className="text-center py-12 text-gray-500">
+                Please upload a CSV file first.
+            </div>
+        );
+    }
 
     const renderFieldRow = (field: DynamicField) => (
         <div
