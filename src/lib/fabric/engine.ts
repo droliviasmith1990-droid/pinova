@@ -17,84 +17,121 @@ export interface FieldMapping {
 // ============================================
 // Environment Detection
 // ============================================
-const isNode = typeof window === 'undefined';
+// NOTE: Do NOT cache this at module level - check inside functions for bundler safety
 
 // ============================================
 // Universal Image Loader Helper
 // ============================================
 
 /**
- * Check if a URL is external (cross-origin) and needs proxy routing.
- * Returns false for data URLs, relative URLs, and same-origin URLs.
- */
-function isExternalUrl(urlStr: string): boolean {
-    if (!urlStr || urlStr.startsWith('data:')) return false;
-
-    try {
-        const parsed = new URL(urlStr, isNode ? undefined : window.location.origin);
-
-        // In browser, compare with window.location.origin
-        if (!isNode && typeof window !== 'undefined') {
-            return parsed.origin !== window.location.origin;
-        }
-
-        // In Node, all http(s) URLs are considered "external" (handled separately)
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-    } catch {
-        // If URL parsing fails, assume it's a relative/local URL
-        return false;
-    }
-}
-
-/**
  * Handles loading images in both Browser (Client) and Node.js (Server) environments.
  * 
- * Problem: Browsers enforce strict CORS policies for images drawn onto a canvas.
- * Even if an image loads visually, using it in Fabric can "taint" the canvas,
- * causing toDataURL() exports to fail or blocking the load entirely.
+ * CRITICAL: This function MUST route external URLs through the proxy in browser
+ * to prevent CORS "tainted canvas" errors that break toDataURL() exports.
  * 
- * Solution:
- * - Browser + External URL: Route through /api/proxy-image to bypass CORS
- * - Node.js: Fetch buffer manually and convert to Base64 Data URL
+ * Strategy:
+ * - Browser + HTTP/HTTPS URL (not same origin): Route through /api/proxy-image
+ * - Browser + Data URL or same-origin: Load directly
+ * - Node.js: Fetch buffer -> Base64 data URL (Node has no CORS restrictions)
  */
 async function loadImageToCanvas(
     url: string,
     options: Partial<fabric.ImageProps> = {}
 ): Promise<fabric.FabricImage> {
-    try {
-        let loadUrl = url;
+    // CRITICAL: Check environment INSIDE the function, not at module level
+    // This ensures accurate detection even with bundler optimizations
+    const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
+    const isNodeEnv = !isBrowser;
 
-        if (isNode) {
-            // Node.js Environment: Fetch buffer -> Base64
-            // This bypasses node-canvas limitations with external HTTP resources
+    let loadUrl = url;
+
+    // Early exit for empty URLs
+    if (!url) {
+        console.error('[SharedEngine] Empty URL provided to loadImageToCanvas');
+        throw new Error('Empty image URL');
+    }
+
+    // Handle Data URLs - no proxy needed
+    if (url.startsWith('data:')) {
+        console.log('[SharedEngine] Loading data URL directly');
+        loadUrl = url;
+    }
+    // Node.js Environment: Fetch buffer -> Base64
+    else if (isNodeEnv) {
+        console.log('[SharedEngine] Node.js: Fetching image as buffer:', url.substring(0, 80) + '...');
+        try {
             const response = await fetch(url);
-            if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+            }
 
             const arrayBuffer = await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
             const base64 = buffer.toString('base64');
             const contentType = response.headers.get('content-type') || 'image/png';
             loadUrl = `data:${contentType};base64,${base64}`;
-        } else if (isExternalUrl(url)) {
-            // Browser + External URL: Route through proxy to bypass CORS
-            // The proxy fetches the image server-side and serves it from same origin
-            loadUrl = `/api/proxy-image?url=${encodeURIComponent(url)}`;
+        } catch (fetchError) {
+            console.error('[SharedEngine] Node.js fetch failed:', fetchError);
+            throw fetchError;
         }
-        // else: Browser + same-origin URL or data URL - use directly
+    }
+    // Browser Environment: Check if URL needs proxying
+    else if (isBrowser) {
+        // AGGRESSIVE PROXY: Any http/https URL that is NOT our origin MUST go through proxy
+        const isHttpUrl = url.startsWith('http://') || url.startsWith('https://');
 
-        // Fabric v6 load from URL logic
-        // returns a Promise that resolves to the image instance
+        if (isHttpUrl) {
+            // Check if it's same origin
+            let isSameOrigin = false;
+            try {
+                const parsedUrl = new URL(url);
+                isSameOrigin = parsedUrl.origin === window.location.origin;
+            } catch {
+                // If URL parsing fails, assume it needs proxy
+                isSameOrigin = false;
+            }
+
+            if (!isSameOrigin) {
+                // MUST proxy external URLs to avoid CORS tainted canvas
+                const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(url)}`;
+                console.log('[SharedEngine] Browser: Proxying external URL:', url.substring(0, 60) + '...');
+                console.log('[SharedEngine] -> Proxy URL:', proxyUrl.substring(0, 80));
+                loadUrl = proxyUrl;
+            } else {
+                console.log('[SharedEngine] Browser: Same-origin URL, loading directly');
+                loadUrl = url;
+            }
+        } else {
+            // Relative URL or other protocol - load directly
+            console.log('[SharedEngine] Browser: Non-HTTP URL, loading directly:', url.substring(0, 60));
+            loadUrl = url;
+        }
+    }
+
+    // Load the image with Fabric
+    try {
+        console.log('[SharedEngine] Loading via Fabric.fromURL:', loadUrl.substring(0, 80) + '...');
+
         const img = await fabric.FabricImage.fromURL(loadUrl, {
-            crossOrigin: 'anonymous', // Crucial for CORS in browser
+            crossOrigin: 'anonymous',
             ...options
         });
 
+        if (!img || !img.width || !img.height) {
+            throw new Error('Fabric loaded empty or invalid image');
+        }
+
+        console.log('[SharedEngine] Successfully loaded image:', img.width, 'x', img.height);
         return img;
 
-    } catch (error) {
-        console.error(`[SharedEngine] Error loading image (${url}):`, error);
-        // Return an empty image to prevent crash
-        return new fabric.FabricImage(new Image());
+    } catch (fabricError) {
+        console.error('[SharedEngine] Fabric.fromURL failed for:', loadUrl.substring(0, 80));
+        console.error('[SharedEngine] Original URL was:', url.substring(0, 80));
+        console.error('[SharedEngine] Error:', fabricError);
+
+        // IMPORTANT: Throw the error so the caller knows the pin failed
+        // Do NOT return an empty image - that hides failures
+        throw new Error(`Failed to load image: ${fabricError instanceof Error ? fabricError.message : 'Unknown error'}`);
     }
 }
 

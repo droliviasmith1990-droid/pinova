@@ -367,9 +367,29 @@ export function GenerationController({
 
                 } catch (error) {
                     // FAIL-SAFE: Log error, mark pin as failed, and CONTINUE to next pin
-                    console.error(`Failed to render pin ${rowIndex}:`, error);
+                    console.error(`[Generation] Failed to render pin ${rowIndex}:`, error);
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                     errors.push({ rowIndex, error: errorMessage });
+
+                    // CRITICAL: Persist failed pin to DATABASE (not just UI state)
+                    // This ensures the failure record survives page refresh/pause
+                    try {
+                        await fetch('/api/generated-pins', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                campaign_id: campaignId,
+                                user_id: userId,
+                                image_url: '', // Empty for failed pins
+                                data_row: csvData[rowIndex],
+                                status: 'failed',
+                                error_message: errorMessage,
+                            }),
+                        });
+                        console.log(`[Generation] Persisted failed pin ${rowIndex} to database`);
+                    } catch (persistError) {
+                        console.error(`[Generation] Failed to persist error state for pin ${rowIndex}:`, persistError);
+                    }
 
                     // Report failed pin to UI immediately so it appears in the list
                     onPinGenerated({
@@ -380,6 +400,15 @@ export function GenerationController({
                         errorMessage,
                         csvData: csvData[rowIndex],
                     });
+
+                    // Save progress even for failures
+                    throttledSaveProgressRef.current({
+                        campaignId,
+                        lastCompletedIndex: rowIndex,
+                        totalPins: csvData.length,
+                        status: 'processing'
+                    });
+
                     // Loop continues to next pin - no crash
                 }
 
