@@ -46,6 +46,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
     const {
         elements, selectedIds, selectElement, updateElement, pushHistory,
         zoom, setZoom, backgroundColor, canvasSize, previewMode,
+        snappingEnabled, setSnappingEnabled,
     } = useEditorStore(useShallow((s) => ({
         elements: s.elements,
         selectedIds: s.selectedIds,
@@ -57,6 +58,8 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         backgroundColor: s.backgroundColor,
         canvasSize: s.canvasSize,
         previewMode: s.previewMode,
+        snappingEnabled: s.snappingEnabled,
+        setSnappingEnabled: s.setSnappingEnabled,
     })));
 
     // Sync Refs
@@ -73,143 +76,199 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         setEditingId(null);
     }, [editingId, editingText, updateElement, pushHistory]);
 
-    const initCanvas = useCallback(async () => {
-        if (!canvasElRef.current) return;
-        if (fabricCanvasRef.current) {
-            fabricCanvasRef.current.dispose();
+    // Sync Snapping Toggle
+    // ✅ FIX: Zoom & Dimensions Handler
+    useEffect(() => {
+        if (!fabricCanvasRef.current || !isCanvasReady) return;
+        const canvas = fabricCanvasRef.current;
+        // Safety: Check if canvas is disposed (no lowerCanvasEl)
+        if (!canvas.getElement()) return;
+
+        canvas.setZoom(zoom);
+        canvas.setDimensions({
+            width: canvasSize.width * zoom,
+            height: canvasSize.height * zoom
+        });
+        canvas.requestRenderAll();
+    }, [zoom, canvasSize, isCanvasReady]);
+
+    // Sync Snapping Toggle
+    const isInitializingRef = useRef(false);
+
+    // Sync Snapping Toggle
+    useEffect(() => {
+        if (guidesRef.current) {
+            guidesRef.current.setEnabled(snappingEnabled);
         }
-        await new Promise(resolve => setTimeout(resolve, 50));
+    }, [snappingEnabled]);
 
-        const canvas = new fabric.Canvas(canvasElRef.current, {
-            width: canvasSize.width,
-            height: canvasSize.height,
-            selection: true,
-            preserveObjectStacking: true,
-            backgroundColor: backgroundColor,
-            controlsAboveOverlay: true,
-        });
+    const initCanvas = useCallback(async () => {
+        if (!canvasElRef.current || isInitializingRef.current) return;
 
-        fabricCanvasRef.current = canvas;
-        setFabricRef(fabricCanvasRef);
-        setIsCanvasReady(true);
+        isInitializingRef.current = true;
 
-        // ✅ NEW: Initialize Smart Guides
-        guidesRef.current = new AlignmentGuides(canvas);
-
-        // --- Event Listeners ---
-
-        canvas.on('selection:created', (e) => {
-            if (isUpdatingFromFabric.current) return;
-            const id = e.selected?.[0] ? getElementId(e.selected[0]) : null;
-            if (id) selectElement(id);
-        });
-
-        canvas.on('selection:updated', (e) => {
-            if (isUpdatingFromFabric.current) return;
-            const id = e.selected?.[0] ? getElementId(e.selected[0]) : null;
-            if (id) selectElement(id);
-        });
-
-        canvas.on('selection:cleared', () => {
-            if (isUpdatingFromFabric.current) return;
-            selectElement(null);
-        });
-
-        // ✅ FIX: "Snap-Back" & Geometry Handler
-        canvas.on('object:modified', (e) => {
-            const obj = e.target;
-            if (!obj) return;
-            const id = getElementId(obj);
-            if (!id) return;
-
-            isUpdatingFromFabric.current = true;
-
-            const scaleX = obj.scaleX || 1;
-            const scaleY = obj.scaleY || 1;
-            const currentWidth = obj.width || 0;
-            const currentHeight = obj.height || 0;
-
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const updatePayload: any = {
-                x: obj.left || 0,
-                y: obj.top || 0,
-                rotation: obj.angle || 0,
-            };
-
-            // Specialized handling for Text vs. Image
-            if (obj instanceof fabric.Textbox) {
-                const currentFontSize = obj.fontSize || 16;
-                // Calculate new properties
-                const newFontSize = Math.round(currentFontSize * scaleY);
-                const newWidth = Math.round(currentWidth * scaleX);
-
-                updatePayload.fontSize = newFontSize;
-                updatePayload.width = newWidth;
-
-                // ✅ CRITICAL: Apply to Visual Object Immediately
-                obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 });
-            } else {
-                const newWidth = Math.round(currentWidth * scaleX);
-                const newHeight = Math.round(currentHeight * scaleY);
-
-                updatePayload.width = newWidth;
-                updatePayload.height = newHeight;
-
-                // ✅ CRITICAL: Apply to Visual Object Immediately
-                obj.set({ width: newWidth, height: newHeight, scaleX: 1, scaleY: 1 });
+        try {
+            if (fabricCanvasRef.current) {
+                // Determine if we need to dispose (e.g. strict mode double-invoke)
+                // But generally, we should trust the ref.
+                try {
+                    fabricCanvasRef.current.dispose();
+                } catch (e) { console.warn("Canvas dispose error", e); }
+                fabricCanvasRef.current = null;
             }
 
-            obj.setCoords(); // Refresh handles
-            updateElement(id, updatePayload);
-            pushHistory();
-            setTimeout(() => { isUpdatingFromFabric.current = false; }, 50);
-        });
+            // Wait for previous stack cleanup
+            await new Promise(resolve => setTimeout(resolve, 50));
+            if (!canvasElRef.current) return; // Component unmounted
 
-        canvas.on('mouse:dblclick', (e) => {
-            const obj = e.target;
-            const id = obj ? getElementId(obj) : null;
-            const el = elementsRef.current.find(e => e.id === id);
-            if (el && el.type === 'text' && !el.locked) {
-                setEditingId(el.id);
-                setEditingText((el as TextElement).text);
-                setTimeout(() => textAreaRef.current?.focus(), 50);
-            }
-        });
+            const canvas = new fabric.Canvas(canvasElRef.current, {
+                width: canvasSize.width,
+                height: canvasSize.height,
+                selection: true,
+                preserveObjectStacking: true,
+                backgroundColor: backgroundColor,
+                controlsAboveOverlay: true,
+            });
 
-        canvas.on('mouse:down', (e) => {
-            const evt = e.e as MouseEvent;
-            if (evt.button === 2) {
-                evt.preventDefault();
-                setContextMenu({ x: evt.clientX, y: evt.clientY, isOpen: true });
-            } else {
-                setContextMenu(prev => prev.isOpen ? { ...prev, isOpen: false } : prev);
+            fabricCanvasRef.current = canvas;
+            setFabricRef(fabricCanvasRef);
+            setIsCanvasReady(true);
+
+            // ✅ NEW: Initialize Smart Guides
+            if (guidesRef.current) {
+                guidesRef.current.dispose();
             }
-            if (editingIdRef.current) {
-                const el = elementsRef.current.find(e => e.id === editingIdRef.current);
-                if (el && el.type === 'text') {
-                    updateElement(editingIdRef.current, { text: editingTextRef.current });
-                    pushHistory();
+            guidesRef.current = new AlignmentGuides(canvas);
+            guidesRef.current.setEnabled(useEditorStore.getState().snappingEnabled);
+
+            // ✅ AUTO-ZOOM TO FIT
+            const viewportWidth = window.innerWidth - 320;
+            const viewportHeight = window.innerHeight - 100;
+
+            const padding = 80;
+            const availableWidth = viewportWidth - padding;
+            const availableHeight = viewportHeight - padding;
+
+            const zoomX = availableWidth / canvasSize.width;
+            const zoomY = availableHeight / canvasSize.height;
+            const optimalZoom = Math.min(zoomX, zoomY, 1);
+
+            setZoom(Math.max(0.1, optimalZoom));
+
+            // --- Event Listeners (moved inside try block) ---
+
+            canvas.on('selection:created', (e) => {
+                if (isUpdatingFromFabric.current) return;
+                const id = e.selected?.[0] ? getElementId(e.selected[0]) : null;
+                if (id) selectElement(id);
+            });
+
+            canvas.on('selection:updated', (e) => {
+                if (isUpdatingFromFabric.current) return;
+                const id = e.selected?.[0] ? getElementId(e.selected[0]) : null;
+                if (id) selectElement(id);
+            });
+
+            canvas.on('selection:cleared', () => {
+                if (isUpdatingFromFabric.current) return;
+                selectElement(null);
+            });
+
+            // ✅ FIX: "Snap-Back" & Geometry Handler
+            canvas.on('object:modified', (e: fabric.ModifiedEvent<fabric.TPointerEvent>) => {
+                const obj = e.target;
+                if (!obj) return;
+                const id = getElementId(obj);
+                if (!id) return;
+
+                isUpdatingFromFabric.current = true;
+
+                const scaleX = obj.scaleX || 1;
+                const scaleY = obj.scaleY || 1;
+                const currentWidth = obj.width || 0;
+                const currentHeight = obj.height || 0;
+
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const updatePayload: any = {
+                    x: obj.left || 0,
+                    y: obj.top || 0,
+                    rotation: obj.angle || 0,
+                };
+
+                // Specialized handling for Text vs. Image
+                if (obj instanceof fabric.Textbox) {
+                    const currentFontSize = obj.fontSize || 16;
+                    const newFontSize = Math.round(currentFontSize * scaleY);
+                    const newWidth = Math.round(currentWidth * scaleX);
+
+                    updatePayload.fontSize = newFontSize;
+                    updatePayload.width = newWidth;
+
+                    obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 });
+                } else {
+                    const newWidth = Math.round(currentWidth * scaleX);
+                    const newHeight = Math.round(currentHeight * scaleY);
+
+                    updatePayload.width = newWidth;
+                    updatePayload.height = newHeight;
+
+                    obj.set({ width: newWidth, height: newHeight, scaleX: 1, scaleY: 1 });
                 }
-                setEditingId(null);
-            }
-        });
 
-        // ✅ FIX: Safe Zoom Handler
-        canvas.on('mouse:wheel', (opt) => {
-            if (opt.e.ctrlKey || opt.e.metaKey) {
-                opt.e.preventDefault();
-                opt.e.stopPropagation();
-                const delta = opt.e.deltaY;
-                const scaleBy = 1.1;
-                const dir = delta > 0 ? -1 : 1;
+                obj.setCoords();
+                updateElement(id, updatePayload);
+                pushHistory();
+                setTimeout(() => { isUpdatingFromFabric.current = false; }, 50);
+            });
 
-                const currentZoom = useEditorStore.getState().zoom;
-                const newZoom = dir > 0 ? currentZoom * scaleBy : currentZoom / scaleBy;
+            canvas.on('mouse:dblclick', (e: fabric.TPointerEventInfo<fabric.TPointerEvent>) => {
+                const obj = e.target;
+                const id = obj ? getElementId(obj) : null;
+                const el = elementsRef.current.find(item => item.id === id);
+                if (el && el.type === 'text' && !el.locked) {
+                    setEditingId(el.id);
+                    setEditingText((el as TextElement).text);
+                    setTimeout(() => textAreaRef.current?.focus(), 50);
+                }
+            });
 
-                // Pass Number, not Function
-                setZoom(Math.max(0.1, Math.min(3, newZoom)));
-            }
-        });
+            canvas.on('mouse:down', (e: fabric.TPointerEventInfo<fabric.TPointerEvent>) => {
+                const evt = e.e as MouseEvent;
+                if (evt.button === 2) {
+                    evt.preventDefault();
+                    setContextMenu({ x: evt.clientX, y: evt.clientY, isOpen: true });
+                } else {
+                    setContextMenu(prev => prev.isOpen ? { ...prev, isOpen: false } : prev);
+                }
+                if (editingIdRef.current) {
+                    const el = elementsRef.current.find(item => item.id === editingIdRef.current);
+                    if (el && el.type === 'text') {
+                        updateElement(editingIdRef.current, { text: editingTextRef.current });
+                        pushHistory();
+                    }
+                    setEditingId(null);
+                }
+            });
+
+            // ✅ FIX: Safe Zoom Handler
+            canvas.on('mouse:wheel', (opt: fabric.TPointerEventInfo<WheelEvent>) => {
+                if (opt.e.ctrlKey || opt.e.metaKey) {
+                    opt.e.preventDefault();
+                    opt.e.stopPropagation();
+                    const delta = opt.e.deltaY;
+                    const scaleBy = 1.1;
+                    const dir = delta > 0 ? -1 : 1;
+
+                    const currentZoom = useEditorStore.getState().zoom;
+                    const newZoom = dir > 0 ? currentZoom * scaleBy : currentZoom / scaleBy;
+
+                    setZoom(Math.max(0.1, Math.min(3, newZoom)));
+                }
+            });
+
+        } finally {
+            isInitializingRef.current = false;
+        }
 
     }, [canvasSize, backgroundColor, selectElement, updateElement, pushHistory, setFabricRef, setZoom]);
 
@@ -249,6 +308,16 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                     const active = objs.find(o => getElementId(o) === currentSelectedIds[0]);
                     if (active) fabricCanvasRef.current.setActiveObject(active);
                 }
+
+                // ✅ CRITICAL: Re-apply Zoom & Dimensions after renderTemplate reset
+                // renderTemplate resets dimensions to raw canvasSize, so we must re-scale
+                const zoom = useEditorStore.getState().zoom;
+                fabricCanvasRef.current.setZoom(zoom);
+                fabricCanvasRef.current.setDimensions({
+                    width: canvasSize.width * zoom,
+                    height: canvasSize.height * zoom
+                });
+
                 fabricCanvasRef.current.requestRenderAll();
 
             } catch (error) { console.error("Render failed:", error); }

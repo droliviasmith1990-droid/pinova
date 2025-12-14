@@ -47,6 +47,7 @@ interface EditorState {
     activeTab: 'properties' | 'layers';
     isSaving: boolean;
     isNewTemplate: boolean;
+    snappingEnabled: boolean; // ✅ New State
 
     // Clipboard
     clipboard: Element | null;
@@ -134,6 +135,8 @@ interface EditorActions {
     setZoom: (zoomOrUpdater: number | ((prevZoom: number) => number)) => void;
     zoomToFit: (viewportWidth: number, viewportHeight: number) => void;
     setSnapToGrid: (snap: boolean) => void;
+    setSnappingEnabled: (enabled: boolean) => void;
+    toggleSnapping: () => void;
     setPreviewMode: (preview: boolean) => void;
     setGuides: (guides: Guide[]) => void;
     clearGuides: () => void;
@@ -178,6 +181,7 @@ export const useEditorStore = create(
             activeTab: 'properties',
             isSaving: false,
             isNewTemplate: true,
+            snappingEnabled: true, // ✅ Default True
             clipboard: null,
             styleClipboard: null,
             templates: [],
@@ -801,6 +805,8 @@ export const useEditorStore = create(
                 set({ zoom: Math.max(0.1, optimalZoom) });
             },
             setSnapToGrid: (snap) => set({ snapToGrid: snap }),
+            setSnappingEnabled: (enabled) => set({ snappingEnabled: enabled }),
+            toggleSnapping: () => set((state) => ({ snappingEnabled: !state.snappingEnabled })),
             setPreviewMode: (preview) => set({ previewMode: preview }),
             setGuides: (guides) => set({ guides }),
             clearGuides: () => set({ guides: [] }),

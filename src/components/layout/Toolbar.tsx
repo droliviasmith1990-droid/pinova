@@ -26,6 +26,7 @@ import { useEditorStore } from '@/stores/editorStore';
 import { cn } from '@/lib/utils';
 import { TextElement as TextElementType } from '@/types/editor';
 import { FontPicker } from '@/components/panels/FontPicker';
+import { SnappingToolbarButton } from '@/components/editor/SnappingToolbarButton';
 
 const ZOOM_LEVELS = [0.1, 0.15, 0.2, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -278,16 +279,8 @@ export function Toolbar({ onOpenFontLibrary }: ToolbarProps) {
 
             <Separator />
 
-            {/* Snap to Grid */}
-            <label className="flex items-center gap-1 cursor-pointer h-8 px-2 border border-gray-300 rounded hover:bg-gray-50">
-                <input
-                    type="checkbox"
-                    checked={snapToGrid}
-                    onChange={(e) => setSnapToGrid(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
-                />
-                <Grid3X3 className="w-3.5 h-3.5 text-gray-600" />
-            </label>
+            {/* Snapping Controls */}
+            <SnappingToolbarButton />
         </div>
     );
 }

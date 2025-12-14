@@ -1,57 +1,164 @@
 import * as fabric from 'fabric';
+import { useSnappingSettingsStore, SnappingSettings } from '@/stores/snappingSettingsStore';
 
-interface SnappingGap {
-    dist: number;
-    value: number;
+// Types for graduated magnetism
+type MagneticZone = 'far' | 'near' | 'lock' | 'none';
+
+interface GuideLine {
+    x?: number;
+    y?: number;
+    x1?: number;
+    x2?: number;
+    y1?: number;
+    y2?: number;
+    zone: MagneticZone;
+    isBoundary?: boolean;
+}
+
+interface DistanceBadge {
+    x: number;
+    y: number;
+    text: string;
+    axis: 'x' | 'y';
+    zone: MagneticZone;
 }
 
 export class AlignmentGuides {
     private canvas: fabric.Canvas;
     private ctx: CanvasRenderingContext2D;
-    private aligningLineOffset: number = 5;
-    private aligningLineMargin: number = 4;
-    private aligningLineWidth: number = 1;
-    private aligningLineColor: string = '#F63E97';
     private viewportTransform: number[] | undefined;
     private zoom: number = 1;
+    private isScaling: boolean = false;
+    private enabled: boolean = true;
+
+    // Visual Data
+    private verticalLines: GuideLine[] = [];
+    private horizontalLines: GuideLine[] = [];
+    private distanceBadges: DistanceBadge[] = [];
+    private celebrationActive: boolean = false;
+    private celebrationProgress: number = 0;
+    private celebrationX: number = 0;
+    private celebrationY: number = 0;
+
+    // Settings (synced from store)
+    private settings: SnappingSettings;
 
     constructor(canvas: fabric.Canvas) {
         this.canvas = canvas;
-        this.ctx = canvas.getSelectionContext();
+        this.ctx = canvas.getContext();
+        this.settings = useSnappingSettingsStore.getState();
+
+        // Auto-bind handlers
+        this.onObjectMoving = this.onObjectMoving.bind(this);
+        this.clearLines = this.clearLines.bind(this);
+        this.drawLines = this.drawLines.bind(this);
+        this.onScaling = this.onScaling.bind(this);
+        this.onModified = this.onModified.bind(this);
+
+        // Subscribe to settings changes
+        useSnappingSettingsStore.subscribe((state) => {
+            this.settings = state;
+        });
+
         this.init();
     }
 
     private init() {
-        this.canvas.on('object:moving', this.onObjectMoving.bind(this));
-        this.canvas.on('before:render', this.clearLines.bind(this));
-        this.canvas.on('after:render', this.drawLines.bind(this));
-        this.canvas.on('mouse:up', this.clearLines.bind(this));
+        this.canvas.on('object:moving', this.onObjectMoving);
+        this.canvas.on('object:scaling', this.onScaling);
+        this.canvas.on('object:modified', this.onModified);
+        this.canvas.on('after:render', this.drawLines);
+        this.canvas.on('mouse:up', this.clearLines);
     }
 
     public dispose() {
-        this.canvas.off('object:moving', this.onObjectMoving.bind(this));
-        this.canvas.off('before:render', this.clearLines.bind(this));
-        this.canvas.off('after:render', this.drawLines.bind(this));
-        this.canvas.off('mouse:up', this.clearLines.bind(this));
+        this.canvas.off('object:moving', this.onObjectMoving);
+        this.canvas.off('object:scaling', this.onScaling);
+        this.canvas.off('object:modified', this.onModified);
+        this.canvas.off('after:render', this.drawLines);
+        this.canvas.off('mouse:up', this.clearLines);
+        this.clearLines();
     }
 
-    // Temporary storage for lines to be drawn
-    private verticalLines: { x: number; y1: number; y2: number }[] = [];
-    private horizontalLines: { y: number; x1: number; x2: number }[] = [];
+    public setEnabled(enabled: boolean) {
+        this.enabled = enabled;
+        if (!enabled) this.clearLines();
+    }
+
+    private onScaling() {
+        this.isScaling = true;
+        this.clearLines();
+    }
+
+    private onModified() {
+        this.isScaling = false;
+    }
 
     private clearLines() {
         this.verticalLines = [];
         this.horizontalLines = [];
-        // We don't manually clear context here as fabric's render cycle handles it
-        // or we rely on the next render to clear previous state
+        this.distanceBadges = [];
+        this.celebrationActive = false;
+        this.canvas.requestRenderAll();
+    }
+
+    // --- Graduated Zone Detection ---
+    private getZone(distance: number, isBoundary: boolean = false): MagneticZone {
+        const sens = this.settings.snapSensitivity;
+        const strengthMultiplier = this.settings.magneticStrength === 'strong' ? 1.5 :
+            this.settings.magneticStrength === 'weak' ? 0.6 : 1;
+
+        // Boundaries get extra magnetic pull
+        const boundaryBonus = isBoundary ? 1.3 : 1;
+        const effectiveSens = sens * strengthMultiplier * boundaryBonus;
+
+        // Precision lock zone (0-1px for instant snap)
+        if (this.settings.precisionLock && distance <= 1) return 'lock';
+
+        // Zone 3: Lock (0-5px adjusted)
+        if (distance <= effectiveSens * 0.35) return 'lock';
+
+        // Zone 2: Near (5-10px adjusted)
+        if (distance <= effectiveSens * 0.7) return 'near';
+
+        // Zone 1: Far (10-15px adjusted)
+        if (distance <= effectiveSens) return 'far';
+
+        return 'none';
+    }
+
+    private getMagneticPull(zone: MagneticZone, distance: number): number {
+        if (!this.settings.magneticSnapping) return 0;
+
+        switch (zone) {
+            case 'lock': return distance; // Full snap
+            case 'near': return distance * 0.7; // Strong pull
+            case 'far': return distance * 0.3; // Gentle pull
+            default: return 0;
+        }
+    }
+
+    // --- Visual Style by Zone ---
+    private getLineStyle(zone: MagneticZone, isBoundary: boolean = false): { width: number; opacity: number; dashed: boolean } {
+        const baseWidth = isBoundary ? 2 : 1;
+
+        switch (zone) {
+            case 'lock':
+                return { width: baseWidth * 2.5, opacity: 1, dashed: false };
+            case 'near':
+                return { width: baseWidth * 1.5, opacity: 0.6, dashed: false };
+            case 'far':
+                return { width: baseWidth, opacity: 0.3, dashed: true };
+            default:
+                return { width: baseWidth, opacity: 0.2, dashed: true };
+        }
     }
 
     private drawLines() {
-        if (!this.verticalLines.length && !this.horizontalLines.length) return;
+        if (!this.settings.showGuideLines) return;
+        if (!this.verticalLines.length && !this.horizontalLines.length && !this.distanceBadges.length) return;
 
         this.ctx.save();
-        this.ctx.lineWidth = this.aligningLineWidth;
-        this.ctx.strokeStyle = this.aligningLineColor;
 
         if (this.viewportTransform) {
             this.ctx.transform(
@@ -64,216 +171,453 @@ export class AlignmentGuides {
             );
         }
 
-        // Apply Reverse Zoom for consistent line thickness (optional, but good for visibility)
-        // this.ctx.lineWidth = this.aligningLineWidth / this.zoom;
+        const scale = this.zoom;
 
+        // Draw vertical guide lines
         for (const v of this.verticalLines) {
-            this.drawLine(v.x, v.y1, v.x, v.y2);
+            if (v.x === undefined) continue;
+            const style = this.getLineStyle(v.zone, v.isBoundary);
+
+            this.ctx.beginPath();
+            this.ctx.strokeStyle = this.hexToRgba(this.settings.guideColor, style.opacity);
+            this.ctx.lineWidth = style.width / Math.max(scale, 0.01);
+
+            if (style.dashed) {
+                this.ctx.setLineDash([6 / scale, 4 / scale]);
+            } else {
+                this.ctx.setLineDash([]);
+            }
+
+            this.ctx.moveTo(v.x, v.y1 || -5000);
+            this.ctx.lineTo(v.x, v.y2 || 5000);
+            this.ctx.stroke();
+
+            // Glow effect for lock zone
+            if (v.zone === 'lock' && this.settings.guideAnimations) {
+                this.ctx.strokeStyle = this.hexToRgba(this.settings.guideColor, 0.3);
+                this.ctx.lineWidth = (style.width * 3) / Math.max(scale, 0.01);
+                this.ctx.stroke();
+            }
         }
 
+        // Draw horizontal guide lines
         for (const h of this.horizontalLines) {
-            this.drawLine(h.x1, h.y, h.x2, h.y);
+            if (h.y === undefined) continue;
+            const style = this.getLineStyle(h.zone, h.isBoundary);
+
+            this.ctx.beginPath();
+            this.ctx.strokeStyle = this.hexToRgba(this.settings.guideColor, style.opacity);
+            this.ctx.lineWidth = style.width / Math.max(scale, 0.01);
+
+            if (style.dashed) {
+                this.ctx.setLineDash([6 / scale, 4 / scale]);
+            } else {
+                this.ctx.setLineDash([]);
+            }
+
+            this.ctx.moveTo(h.x1 || -5000, h.y);
+            this.ctx.lineTo(h.x2 || 5000, h.y);
+            this.ctx.stroke();
+
+            // Glow effect for lock zone
+            if (h.zone === 'lock' && this.settings.guideAnimations) {
+                this.ctx.strokeStyle = this.hexToRgba(this.settings.guideColor, 0.3);
+                this.ctx.lineWidth = (style.width * 3) / Math.max(scale, 0.01);
+                this.ctx.stroke();
+            }
+        }
+
+        // Draw distance badges
+        if (this.settings.distanceIndicators) {
+            for (const badge of this.distanceBadges) {
+                this.drawBadge(badge.x, badge.y, badge.text, scale, badge.zone);
+            }
+        }
+
+        // Draw celebration animation
+        if (this.celebrationActive && this.settings.snapCelebrations) {
+            this.drawCelebration(scale);
         }
 
         this.ctx.restore();
     }
 
-    private drawLine(x1: number, y1: number, x2: number, y2: number) {
+    private drawBadge(x: number, y: number, text: string, scale: number, zone: MagneticZone) {
+        // Badge size evolves with zone
+        const sizeMultiplier = zone === 'lock' ? 1.3 : zone === 'near' ? 1.1 : 1;
+        const paddingX = (6 / scale) * sizeMultiplier;
+        const paddingY = (4 / scale) * sizeMultiplier;
+        const fontSize = (12 / scale) * sizeMultiplier;
+
+        this.ctx.font = `bold ${fontSize}px sans-serif`;
+        const metrics = this.ctx.measureText(text);
+        const width = metrics.width + (paddingX * 2);
+        const height = fontSize + (paddingY * 2);
+
+        // Background with zone-based opacity
+        const bgOpacity = zone === 'lock' ? 1 : zone === 'near' ? 0.85 : 0.7;
+        this.ctx.fillStyle = this.hexToRgba(this.settings.guideColor, bgOpacity);
         this.ctx.beginPath();
-        this.ctx.moveTo(x1, y1);
-        this.ctx.lineTo(x2, y2);
+
+        const r = height / 2;
+        const bx = x - width / 2;
+        const by = y - height / 2;
+
+        this.ctx.roundRect(bx, by, width, height, r);
+        this.ctx.fill();
+
+        // Glow for lock zone
+        if (zone === 'lock' && this.settings.guideAnimations) {
+            this.ctx.shadowColor = this.settings.guideColor;
+            this.ctx.shadowBlur = 10 / scale;
+            this.ctx.fill();
+            this.ctx.shadowBlur = 0;
+        }
+
+        // Text
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+
+        // Show checkmark for 0px (perfect alignment)
+        const displayText = text === '0' && zone === 'lock' ? '✓' : text;
+        this.ctx.fillText(displayText, x, y + (1 / scale));
+    }
+
+    private drawCelebration(scale: number) {
+        const progress = this.celebrationProgress;
+        const size = (20 / scale) * (1 + progress * 0.5);
+        const opacity = 1 - progress;
+
+        this.ctx.beginPath();
+        this.ctx.arc(this.celebrationX, this.celebrationY, size, 0, Math.PI * 2);
+        this.ctx.strokeStyle = this.hexToRgba(this.settings.guideColor, opacity * 0.5);
+        this.ctx.lineWidth = 3 / scale;
         this.ctx.stroke();
+
+        // Animate
+        this.celebrationProgress += 0.1;
+        if (this.celebrationProgress >= 1) {
+            this.celebrationActive = false;
+            this.celebrationProgress = 0;
+        } else {
+            requestAnimationFrame(() => this.canvas.requestRenderAll());
+        }
+    }
+
+    private triggerCelebration(x: number, y: number) {
+        if (!this.settings.snapCelebrations) return;
+        this.celebrationActive = true;
+        this.celebrationProgress = 0;
+        this.celebrationX = x;
+        this.celebrationY = y;
+    }
+
+    private hexToRgba(hex: string, alpha: number): string {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
     private onObjectMoving(e: fabric.BasicTransformEvent<fabric.TPointerEvent> & { target: fabric.FabricObject }) {
+        if (!this.enabled || this.isScaling) return;
+        if (!this.settings.magneticSnapping && !this.settings.showGuideLines) return;
+
         const activeObject = e.target;
         if (!activeObject) return;
 
         const canvasObjects = this.canvas.getObjects();
-        const activeObjectCenter = activeObject.getCenterPoint();
-        const activeObjectWidth = activeObject.getScaledWidth();
-        const activeObjectHeight = activeObject.getScaledHeight();
-        const activeObjectBoundingRect = activeObject.getBoundingRect();
+        const activeRect = activeObject.getBoundingRect();
 
         this.viewportTransform = this.canvas.viewportTransform;
         this.zoom = this.canvas.getZoom();
 
-        // Snap Threshold
-        const snappingDistance = 10 / this.zoom;
+        const canvasWidth = this.canvas.width / this.zoom;
+        const canvasHeight = this.canvas.height / this.zoom;
 
-        let snapX: number | null = null;
-        let snapY: number | null = null;
+        this.clearLines();
 
-        // Reset lines
-        this.verticalLines = [];
-        this.horizontalLines = [];
+        // --- Gather Snap Candidates ---
+        interface SnapCandidate {
+            value: number;
+            type: 'edge' | 'center';
+            isBoundary: boolean;
+        }
 
-        // 1. Snap to Canvas Center
-        const canvasWidth = this.canvas.width! / this.zoom;
-        const canvasHeight = this.canvas.height! / this.zoom;
+        const verticalCandidates: SnapCandidate[] = [];
+        const horizontalCandidates: SnapCandidate[] = [];
 
-        // Adjust for viewport transform (pan)
-        // We will calculate relative to the canvas content, not viewport
-        // Fabric objects coordinates are in canvas content space.
+        // Canvas Center Lines - Use logical canvas dimensions
+        if (this.settings.canvasCenterLines) {
+            // FIXED: Calculate center from logical dimensions, not getCenterPoint()
+            // getCenterPoint() returns viewport center which changes with zoom
+            const centerX = canvasWidth / 2;
+            const centerY = canvasHeight / 2;
 
-        // Note: For simplicity in this implementation, we assume canvas dimensions match content
-        // If zooming/panning, we trust fabric's coordinate system.
-        // Let's rely on calculating center relative to the untransformed canvas size if available,
-        // or derived from config. But typically canvas.width/height are the viewport size.
-        // We should use the calculated canvas size (e.g. 1000x1500) passed in props.
-        // For now, let's use the center of the viewport/canvas if that matches the design area. 
-        // Better: Use the active object coordinates which are absolute.
-        // Let's assume the "design area" is (0,0) to (width, height).
-        // If the canvas is 1000x1500, the center is 500, 750.
-        // Ideally we pass canvas size to this class specifically, but for now let's infer or just snap to objects.
-        // Wait, most reliable is to snap to objects. Canvas center requires knowing the "design" size.
-        // Let's iterate objects.
+            console.log(`[AlignmentGuides] Canvas Center Lines ENABLED. Center: (${centerX}, ${centerY}), Canvas: ${canvasWidth}x${canvasHeight}`);
 
-        const centerX = activeObjectCenter.x;
-        const centerY = activeObjectCenter.y;
+            verticalCandidates.push({ value: centerX, type: 'center', isBoundary: false });
+            horizontalCandidates.push({ value: centerY, type: 'center', isBoundary: false });
+        }
 
-        // Snap Lists
-        // Vertical: x coordinates to snap to
-        // Horizontal: y coordinates to snap to
-        const verticalSnapPoints: { value: number, type: 'edge' | 'center', origin: 'object' | 'canvas' }[] = [];
-        const horizontalSnapPoints: { value: number, type: 'edge' | 'center', origin: 'object' | 'canvas' }[] = [];
+        // Canvas Boundaries
+        if (this.settings.snapToBoundaries) {
+            verticalCandidates.push({ value: 0, type: 'edge', isBoundary: true });
+            verticalCandidates.push({ value: canvasWidth, type: 'edge', isBoundary: true });
+            horizontalCandidates.push({ value: 0, type: 'edge', isBoundary: true });
+            horizontalCandidates.push({ value: canvasHeight, type: 'edge', isBoundary: true });
+        }
 
-        // Add Canvas Center/Edges (assuming standard 1000x1500 or reading from somewhere?)
-        // Since we don't have the explicit design size passed here yet, let's skip "Canvas" snapping 
-        // unless we can reliably get it. `canvas.width` is the specific element width.
-        // Actually, we can use `activeObject.canvas` properties if set, or just snap to other objects for now.
-        // Let's stick to Object Snapping first (Edge & Center) + Canvas Center if found.
+        // Other Objects
+        if (this.settings.snapToObjects) {
+            for (const obj of canvasObjects) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                if (obj === activeObject || !obj.visible || (obj as any).name?.includes('guide')) continue;
 
-        const canvasCenter = this.canvas.getCenterPoint();
-        verticalSnapPoints.push({ value: canvasCenter.x, type: 'center', origin: 'canvas' });
-        horizontalSnapPoints.push({ value: canvasCenter.y, type: 'center', origin: 'canvas' });
+                const objRect = obj.getBoundingRect();
 
-        // Iterate over other objects
+                if (this.settings.objectEdges) {
+                    verticalCandidates.push(
+                        { value: objRect.left, type: 'edge', isBoundary: false },
+                        { value: objRect.left + objRect.width, type: 'edge', isBoundary: false }
+                    );
+                    horizontalCandidates.push(
+                        { value: objRect.top, type: 'edge', isBoundary: false },
+                        { value: objRect.top + objRect.height, type: 'edge', isBoundary: false }
+                    );
+                }
+
+                if (this.settings.objectCenters) {
+                    verticalCandidates.push({ value: objRect.left + objRect.width / 2, type: 'center', isBoundary: false });
+                    horizontalCandidates.push({ value: objRect.top + objRect.height / 2, type: 'center', isBoundary: false });
+                }
+            }
+        }
+
+        // --- Active Object Points ---
+        const activeXPoints = [
+            { value: activeRect.left, type: 'edge' as const },
+            { value: activeRect.left + activeRect.width / 2, type: 'center' as const },
+            { value: activeRect.left + activeRect.width, type: 'edge' as const }
+        ];
+
+        const activeYPoints = [
+            { value: activeRect.top, type: 'edge' as const },
+            { value: activeRect.top + activeRect.height / 2, type: 'center' as const },
+            { value: activeRect.top + activeRect.height, type: 'edge' as const }
+        ];
+
+        // --- Find Best Snaps (Non-Greedy with Zones) ---
+        let bestSnapX: { diff: number; target: number; zone: MagneticZone; isBoundary: boolean } | null = null;
+        let bestSnapY: { diff: number; target: number; zone: MagneticZone; isBoundary: boolean } | null = null;
+
+        for (const target of verticalCandidates) {
+            for (const source of activeXPoints) {
+                const dist = Math.abs(target.value - source.value);
+                const zone = this.getZone(dist, target.isBoundary);
+
+                if (zone !== 'none') {
+                    // Prioritize stronger zones
+                    const currentPriority = this.getZonePriority(bestSnapX?.zone);
+                    const newPriority = this.getZonePriority(zone);
+
+                    if (newPriority > currentPriority || (newPriority === currentPriority && dist < Math.abs(bestSnapX?.diff || Infinity))) {
+                        bestSnapX = {
+                            diff: target.value - source.value,
+                            target: target.value,
+                            zone,
+                            isBoundary: target.isBoundary
+                        };
+                    }
+                }
+            }
+        }
+
+        for (const target of horizontalCandidates) {
+            for (const source of activeYPoints) {
+                const dist = Math.abs(target.value - source.value);
+                const zone = this.getZone(dist, target.isBoundary);
+
+                if (zone !== 'none') {
+                    const currentPriority = this.getZonePriority(bestSnapY?.zone);
+                    const newPriority = this.getZonePriority(zone);
+
+                    if (newPriority > currentPriority || (newPriority === currentPriority && dist < Math.abs(bestSnapY?.diff || Infinity))) {
+                        bestSnapY = {
+                            diff: target.value - source.value,
+                            target: target.value,
+                            zone,
+                            isBoundary: target.isBoundary
+                        };
+                    }
+                }
+            }
+        }
+
+        // --- Apply Snaps ---
+        let didSnapX = false;
+        let didSnapY = false;
+
+        if (bestSnapX && this.settings.magneticSnapping) {
+            const pull = this.getMagneticPull(bestSnapX.zone, Math.abs(bestSnapX.diff));
+            if (pull > 0) {
+                activeObject.set({ left: activeObject.left! + (bestSnapX.diff > 0 ? pull : -pull) });
+                didSnapX = bestSnapX.zone === 'lock';
+            }
+
+            this.verticalLines.push({
+                x: bestSnapX.target,
+                y1: -5000,
+                y2: 5000,
+                zone: bestSnapX.zone,
+                isBoundary: bestSnapX.isBoundary
+            });
+        }
+
+        if (bestSnapY && this.settings.magneticSnapping) {
+            const pull = this.getMagneticPull(bestSnapY.zone, Math.abs(bestSnapY.diff));
+            if (pull > 0) {
+                activeObject.set({ top: activeObject.top! + (bestSnapY.diff > 0 ? pull : -pull) });
+                didSnapY = bestSnapY.zone === 'lock';
+            }
+
+            this.horizontalLines.push({
+                y: bestSnapY.target,
+                x1: -5000,
+                x2: 5000,
+                zone: bestSnapY.zone,
+                isBoundary: bestSnapY.isBoundary
+            });
+        }
+
+        if (didSnapX || didSnapY) {
+            activeObject.setCoords();
+            if (didSnapX && didSnapY) {
+                this.triggerCelebration(bestSnapX!.target, bestSnapY!.target);
+            }
+        }
+
+        // --- Distance Measurements ---
+        if (this.settings.distanceIndicators) {
+            const updatedRect = activeObject.getBoundingRect();
+            this.computeDistanceBadges(updatedRect, canvasObjects, activeObject, canvasWidth, canvasHeight);
+        }
+
+        // --- Prevent Off-Canvas ---
+        if (this.settings.preventOffCanvas) {
+            const updatedRect = activeObject.getBoundingRect();
+            let clampNeeded = false;
+
+            if (updatedRect.left < 0) {
+                activeObject.set({ left: activeObject.left! - updatedRect.left });
+                clampNeeded = true;
+            }
+            if (updatedRect.top < 0) {
+                activeObject.set({ top: activeObject.top! - updatedRect.top });
+                clampNeeded = true;
+            }
+            if (updatedRect.left + updatedRect.width > canvasWidth) {
+                activeObject.set({ left: activeObject.left! - (updatedRect.left + updatedRect.width - canvasWidth) });
+                clampNeeded = true;
+            }
+            if (updatedRect.top + updatedRect.height > canvasHeight) {
+                activeObject.set({ top: activeObject.top! - (updatedRect.top + updatedRect.height - canvasHeight) });
+                clampNeeded = true;
+            }
+
+            if (clampNeeded) activeObject.setCoords();
+        }
+
+        this.canvas.requestRenderAll();
+    }
+
+    private getZonePriority(zone: MagneticZone | undefined): number {
+        if (!zone) return 0;
+        switch (zone) {
+            case 'lock': return 3;
+            case 'near': return 2;
+            case 'far': return 1;
+            default: return 0;
+        }
+    }
+
+    private computeDistanceBadges(
+        activeRect: { left: number; top: number; width: number; height: number },
+        canvasObjects: fabric.FabricObject[],
+        activeObject: fabric.FabricObject,
+        _canvasWidth: number,
+        _canvasHeight: number
+    ) {
+        const measurementThreshold = 500 / this.zoom;
+
         for (const obj of canvasObjects) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             if (obj === activeObject || !obj.visible || (obj as any).name?.includes('guide')) continue;
 
-            const objCenter = obj.getCenterPoint();
-            const objRect = obj.getBoundingRect();
+            const targetRect = obj.getBoundingRect();
 
-            // Vertical Snap Points (X)
-            verticalSnapPoints.push({ value: objRect.left, type: 'edge', origin: 'object' });
-            verticalSnapPoints.push({ value: objRect.left + objRect.width, type: 'edge', origin: 'object' });
-            verticalSnapPoints.push({ value: objCenter.x, type: 'center', origin: 'object' });
+            // Vertical overlap check
+            const verticalOverlap =
+                Math.max(0, Math.min(activeRect.top + activeRect.height, targetRect.top + targetRect.height) -
+                    Math.max(activeRect.top, targetRect.top)) > 0;
 
-            // Horizontal Snap Points (Y)
-            horizontalSnapPoints.push({ value: objRect.top, type: 'edge', origin: 'object' });
-            horizontalSnapPoints.push({ value: objRect.top + objRect.height, type: 'edge', origin: 'object' });
-            horizontalSnapPoints.push({ value: objCenter.y, type: 'center', origin: 'object' });
-        }
+            if (verticalOverlap) {
+                const distRightToLeft = targetRect.left - (activeRect.left + activeRect.width);
+                if (distRightToLeft > 0 && distRightToLeft < measurementThreshold) {
+                    const zone = this.getZone(distRightToLeft);
+                    this.distanceBadges.push({
+                        x: activeRect.left + activeRect.width + distRightToLeft / 2,
+                        y: activeRect.top + activeRect.height / 2,
+                        text: Math.round(distRightToLeft).toString(),
+                        axis: 'x',
+                        zone
+                    });
+                }
 
-        // --- Calculate Closest Snap X ---
-        let closestDistX = Number.MAX_VALUE;
-
-        // Active Object X points: Left, Center, Right
-        const activeXPoints = [
-            { value: activeObjectBoundingRect.left, offset: -activeObjectWidth / 2 }, // Left edge (approx) - wait bounding rect is absolute
-            // Let's stick to snapping the CENTER or EDGES of active object to targets.
-            // Simplified: Snap Center to Center/Edges. Snap Edges to Edges/Center.
-
-            // Actually, simplest 'magnetic' feel is usually:
-            // 1. Center to Center
-            // 2. Left to Left/Right
-            // 3. Right to Left/Right
-        ];
-
-        // We check 3 lines for the active object: Left (0), Center (width/2), Right (width)
-        // But activeObjectBoundingRect gives us Left, Top, Width, Height.
-        const activeLeft = activeObjectBoundingRect.left;
-        const activeRight = activeObjectBoundingRect.left + activeObjectBoundingRect.width;
-        const activeCenterX = activeObjectBoundingRect.left + activeObjectBoundingRect.width / 2;
-
-        const activeTop = activeObjectBoundingRect.top;
-        const activeBottom = activeObjectBoundingRect.top + activeObjectBoundingRect.height;
-        const activeCenterY = activeObjectBoundingRect.top + activeObjectBoundingRect.height / 2;
-
-        // Check Vertical Snaps
-        for (const snap of verticalSnapPoints) {
-            // Check Center
-            if (Math.abs(snap.value - activeCenterX) < snappingDistance) {
-                if (Math.abs(snap.value - activeCenterX) < closestDistX) {
-                    closestDistX = Math.abs(snap.value - activeCenterX);
-                    snapX = snap.value;
-                    // Adjust object position
-                    activeObject.set({ left: snap.value - (activeObjectWidth * activeObject.scaleX!) / 2 }); // CAREFUL with origin
-                    // If origin is center:
-                    if (activeObject.originX === 'center') {
-                        activeObject.set({ left: snap.value });
-                    } else { // origin 'left'
-                        activeObject.set({ left: snap.value - activeObjectBoundingRect.width / 2 });
-                        // Wait, boundingRect width might include rotation.
-                        // For exact positioning, better use setPositionByOrigin or translate.
-                        // Let's be safer: Calculate delta and apply.
-                        const delta = snap.value - activeCenterX;
-                        activeObject.set({ left: activeObject.left! + delta });
-                    }
-                    this.verticalLines.push({ x: snap.value, y1: -5000, y2: 5000 }); // Draw infinite line
+                const distLeftToRight = activeRect.left - (targetRect.left + targetRect.width);
+                if (distLeftToRight > 0 && distLeftToRight < measurementThreshold) {
+                    const zone = this.getZone(distLeftToRight);
+                    this.distanceBadges.push({
+                        x: targetRect.left + targetRect.width + distLeftToRight / 2,
+                        y: activeRect.top + activeRect.height / 2,
+                        text: Math.round(distLeftToRight).toString(),
+                        axis: 'x',
+                        zone
+                    });
                 }
             }
-            // Check Left
-            if (Math.abs(snap.value - activeLeft) < snappingDistance) {
-                if (Math.abs(snap.value - activeLeft) < closestDistX) {
-                    closestDistX = Math.abs(snap.value - activeLeft);
-                    snapX = snap.value;
-                    const delta = snap.value - activeLeft;
-                    activeObject.set({ left: activeObject.left! + delta });
-                    this.verticalLines.push({ x: snap.value, y1: -5000, y2: 5000 });
+
+            // Horizontal overlap check
+            const horizontalOverlap =
+                Math.max(0, Math.min(activeRect.left + activeRect.width, targetRect.left + targetRect.width) -
+                    Math.max(activeRect.left, targetRect.left)) > 0;
+
+            if (horizontalOverlap) {
+                const distBottomToTop = targetRect.top - (activeRect.top + activeRect.height);
+                if (distBottomToTop > 0 && distBottomToTop < measurementThreshold) {
+                    const zone = this.getZone(distBottomToTop);
+                    this.distanceBadges.push({
+                        x: activeRect.left + activeRect.width / 2,
+                        y: activeRect.top + activeRect.height + distBottomToTop / 2,
+                        text: Math.round(distBottomToTop).toString(),
+                        axis: 'y',
+                        zone
+                    });
                 }
-            }
-            // Check Right
-            if (Math.abs(snap.value - activeRight) < snappingDistance) {
-                if (Math.abs(snap.value - activeRight) < closestDistX) {
-                    closestDistX = Math.abs(snap.value - activeRight);
-                    snapX = snap.value;
-                    const delta = snap.value - activeRight;
-                    activeObject.set({ left: activeObject.left! + delta });
-                    this.verticalLines.push({ x: snap.value, y1: -5000, y2: 5000 });
+
+                const distTopToBottom = activeRect.top - (targetRect.top + targetRect.height);
+                if (distTopToBottom > 0 && distTopToBottom < measurementThreshold) {
+                    const zone = this.getZone(distTopToBottom);
+                    this.distanceBadges.push({
+                        x: activeRect.left + activeRect.width / 2,
+                        y: targetRect.top + targetRect.height + distTopToBottom / 2,
+                        text: Math.round(distTopToBottom).toString(),
+                        axis: 'y',
+                        zone
+                    });
                 }
             }
         }
-
-        // Check Horizontal Snaps
-        let closestDistY = Number.MAX_VALUE;
-        for (const snap of horizontalSnapPoints) {
-            // Check Center
-            if (Math.abs(snap.value - activeCenterY) < snappingDistance) {
-                if (Math.abs(snap.value - activeCenterY) < closestDistY) {
-                    closestDistY = Math.abs(snap.value - activeCenterY);
-                    snapY = snap.value;
-                    const delta = snap.value - activeCenterY;
-                    activeObject.set({ top: activeObject.top! + delta });
-                    this.horizontalLines.push({ y: snap.value, x1: -5000, x2: 5000 });
-                }
-            }
-            // Check Top
-            if (Math.abs(snap.value - activeTop) < snappingDistance) {
-                if (Math.abs(snap.value - activeTop) < closestDistY) {
-                    closestDistY = Math.abs(snap.value - activeTop);
-                    snapY = snap.value;
-                    const delta = snap.value - activeTop;
-                    activeObject.set({ top: activeObject.top! + delta });
-                    this.horizontalLines.push({ y: snap.value, x1: -5000, x2: 5000 });
-                }
-            }
-            // Check Bottom
-            if (Math.abs(snap.value - activeBottom) < snappingDistance) {
-                if (Math.abs(snap.value - activeBottom) < closestDistY) {
-                    closestDistY = Math.abs(snap.value - activeBottom);
-                    snapY = snap.value;
-                    const delta = snap.value - activeBottom;
-                    activeObject.set({ top: activeObject.top! + delta });
-                    this.horizontalLines.push({ y: snap.value, x1: -5000, x2: 5000 });
-                }
-            }
-        }
-
-        // We only want to snap to the Closest one to avoid jitter.
-        // My simple loop above greedily takes the last one found if distances are equal, or closest.
-        // It's acceptable for v1. The visual feedback (lines) helps.
     }
 }
