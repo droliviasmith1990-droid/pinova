@@ -176,10 +176,11 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 const scaleBy = 1.1;
                 const dir = delta > 0 ? -1 : 1;
 
-                // ✅ Access current zoom from store directly to avoid stale closure
-                const currentZoom = useEditorStore.getState().zoom;
-                const newZoom = dir > 0 ? currentZoom * scaleBy : currentZoom / scaleBy;
-                setZoom(Math.max(0.1, Math.min(3, newZoom)));
+                // ✅ FINAL FIX: Functional update to prevent stale zoom closure
+                setZoom(prevZoom => {
+                    const newZoom = dir > 0 ? prevZoom * scaleBy : prevZoom / scaleBy;
+                    return Math.max(0.1, Math.min(3, newZoom));
+                });
             }
         });
 

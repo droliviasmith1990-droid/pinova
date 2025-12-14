@@ -131,7 +131,7 @@ interface EditorActions {
     }) => void;
 
     // UI
-    setZoom: (zoom: number) => void;
+    setZoom: (zoomOrUpdater: number | ((prevZoom: number) => number)) => void;
     zoomToFit: (viewportWidth: number, viewportHeight: number) => void;
     setSnapToGrid: (snap: boolean) => void;
     setPreviewMode: (preview: boolean) => void;
@@ -781,7 +781,14 @@ export const useEditorStore = create(
 
 
             // UI operations
-            setZoom: (zoom) => set({ zoom: Math.max(0.1, Math.min(2, zoom)) }),
+            setZoom: (zoomOrUpdater) => set((state) => ({
+                zoom: Math.max(0.1, Math.min(3,
+                    typeof zoomOrUpdater === 'function'
+                        ? zoomOrUpdater(state.zoom)
+                        : zoomOrUpdater
+                )
+                )
+            })),
             zoomToFit: (viewportWidth, viewportHeight) => {
                 const { canvasSize } = get();
                 // Calculate zoom to fit canvas within viewport with some padding
