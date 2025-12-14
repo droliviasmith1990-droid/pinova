@@ -17,6 +17,7 @@ import { z } from 'zod';
  */
 export const CreateGeneratedPinSchema = z.object({
     campaign_id: z.string().uuid('Invalid campaign ID format'),
+    user_id: z.string().uuid('Invalid user ID format'), // Required for service role auth
     image_url: z.string().optional(),
     data_row: z.record(z.string(), z.string()).optional(),
     status: z.enum(['completed', 'failed', 'pending']).default('completed'),

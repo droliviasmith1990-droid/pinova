@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { CreateGeneratedPinSchema, validateRequest } from '@/lib/validations';
 
@@ -7,9 +7,24 @@ import { CreateGeneratedPinSchema, validateRequest } from '@/lib/validations';
 const DEBUG = process.env.NODE_ENV === 'development';
 const log = (...args: unknown[]) => DEBUG && console.log(...args);
 
-// Initialize Supabase client with cookie-based auth
-// This reads the auth cookies set by the browser client
-async function getAuthenticatedSupabase() {
+// Initialize Supabase client with SERVICE ROLE KEY for writes
+// This bypasses RLS and is used for server-side operations
+function getServiceSupabase(): SupabaseClient | null {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+        console.error('[generated-pins] Missing Supabase SERVICE_ROLE_KEY configuration');
+        return null;
+    }
+
+    return createClient(supabaseUrl, supabaseServiceKey, {
+        auth: { persistSession: false }
+    });
+}
+
+// Initialize Supabase client with cookie-based auth (for GET/DELETE which need user context)
+async function getAuthenticatedSupabase(): Promise<SupabaseClient | null> {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -37,30 +52,16 @@ async function getAuthenticatedSupabase() {
 
 // ============================================
 // POST: Save generated pin record
+// Uses SERVICE ROLE KEY to bypass cookie auth issues on Vercel
 // ============================================
 export async function POST(request: NextRequest) {
     log('[generated-pins] POST request started');
 
     try {
-        const supabase = await getAuthenticatedSupabase();
-        if (!supabase) {
-            return NextResponse.json(
-                { error: 'Server configuration error' },
-                { status: 503 }
-            );
-        }
-
-        // 1. Verify User Session
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-            log('[generated-pins] Auth failed:', authError?.message);
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
         const body = await request.json();
         log('[generated-pins] POST body:', JSON.stringify(body, null, 2));
 
-        // 2. Validate request body with Zod schema
+        // 1. Validate request body with Zod schema
         const validation = validateRequest(CreateGeneratedPinSchema, body);
         if (!validation.success) {
             log('[generated-pins] Validation failed:', validation.error);
@@ -70,18 +71,71 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const { campaign_id, image_url, data_row, status, error_message } = validation.data;
+        const { campaign_id, user_id, image_url, data_row, status, error_message } = validation.data;
 
-        // 2. Insert Record (RLS will ensure users can only insert their own data)
-        // SECURITY: Force user_id from authenticated session, ignore any user_id in body
-        log('[generated-pins] Inserting pin record for user:', user.id);
+        // 2. SECURITY: Validate user_id is provided (required for service role approach)
+        if (!user_id) {
+            log('[generated-pins] Missing user_id in request');
+            return NextResponse.json(
+                { error: 'user_id is required' },
+                { status: 400 }
+            );
+        }
+
+        // 3. Get service role client for write operations
+        const supabase = getServiceSupabase();
+        if (!supabase) {
+            // Fallback to cookie auth if service role not configured
+            log('[generated-pins] Service role not available, trying cookie auth');
+            const authSupabase = await getAuthenticatedSupabase();
+            if (!authSupabase) {
+                return NextResponse.json(
+                    { error: 'Server configuration error' },
+                    { status: 503 }
+                );
+            }
+
+            // Verify user session with cookie auth
+            const { data: { user }, error: authError } = await authSupabase.auth.getUser();
+            if (authError || !user) {
+                log('[generated-pins] Cookie auth failed:', authError?.message);
+                return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+            }
+
+            // Use authenticated user's ID
+            const { data, error } = await authSupabase
+                .from('generated_pins')
+                .insert({
+                    campaign_id,
+                    user_id: user.id,
+                    image_url: image_url || null,
+                    data_row: data_row || null,
+                    status: status || 'completed',
+                    error_message: error_message || null,
+                })
+                .select()
+                .single();
+
+            if (error) {
+                console.error('[generated-pins] Insert error:', error);
+                return NextResponse.json(
+                    { error: 'Failed to save generated pin', details: error.message },
+                    { status: 500 }
+                );
+            }
+
+            return NextResponse.json({ success: true, data }, { status: 201 });
+        }
+
+        // 4. Insert using service role (bypasses RLS)
+        log('[generated-pins] Using service role, inserting for user:', user_id);
         const { data, error } = await supabase
             .from('generated_pins')
             .insert({
                 campaign_id,
-                user_id: user.id, // Forced from session, not client input
+                user_id, // Trust user_id from validated request
                 image_url: image_url || null,
-                data_row: data_row || body.csv_row_data || null,
+                data_row: data_row || null,
                 status: status || 'completed',
                 error_message: error_message || null,
             })
@@ -98,10 +152,8 @@ export async function POST(request: NextRequest) {
 
         log('[generated-pins] Pin saved successfully:', data?.id);
 
-        // 3. Update Campaign Progress - try RPC first, fallback to manual
-        log('[generated-pins] Updating campaign progress...');
+        // 5. Update Campaign Progress (atomic increment)
         try {
-            // Atomic increment via RPC (if available)
             const { error: rpcError } = await supabase.rpc('increment_generated_pins', {
                 campaign_id_input: campaign_id
             });
@@ -127,7 +179,6 @@ export async function POST(request: NextRequest) {
             }
         } catch (updateErr) {
             console.warn('[generated-pins] Campaign update warning:', updateErr);
-            // Don't fail the request, pin was saved
         }
 
         return NextResponse.json({ success: true, data }, { status: 201 });

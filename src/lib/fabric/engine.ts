@@ -24,28 +24,20 @@ export interface FieldMapping {
 // ============================================
 
 /**
- * Creates a visual placeholder for failed images.
- * Used as a safety net when both direct and proxy loading fail.
+ * Creates a TRANSPARENT placeholder for failed images.
+ * This prevents failed images from covering other elements on the canvas.
+ * The placeholder is invisible but maintains the element's position in the object array.
  */
-function createErrorPlaceholder(width: number = 200, height: number = 200): fabric.Group {
-    const rect = new fabric.Rect({
+function createErrorPlaceholder(width: number = 200, height: number = 200): fabric.Rect {
+    // Use a transparent rect instead of visible placeholder
+    // This prevents failed images from blocking/covering other elements
+    return new fabric.Rect({
         width: width,
         height: height,
-        fill: '#f3f4f6',
-        stroke: '#9ca3af',
-        strokeWidth: 2,
+        fill: 'transparent',
+        stroke: 'transparent',
+        opacity: 0, // Completely invisible
     });
-    // Add text indicator
-    const text = new fabric.Text('Image Failed', {
-        fontSize: Math.min(width, height) * 0.1,
-        fontFamily: 'Arial',
-        fill: '#6b7280',
-        originX: 'center',
-        originY: 'center',
-        left: width / 2,
-        top: height / 2,
-    });
-    return new fabric.Group([rect, text], { width, height });
 }
 
 /**
