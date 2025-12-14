@@ -1,5 +1,5 @@
 import * as fabric from 'fabric';
-import { Element, TextElement, ImageElement, ShapeElement } from '@/types/editor';
+import { Element, TextElement, ImageElement, ShapeElement, FrameElement } from '@/types/editor';
 
 // ============================================
 // Types
@@ -8,6 +8,7 @@ export interface RenderConfig {
     width: number;
     height: number;
     backgroundColor?: string;
+    interactive?: boolean; // ✅ NEW: Enable selection for Editor
 }
 
 export interface FieldMapping {
@@ -160,7 +161,6 @@ async function loadImageToCanvas(
     }
 
     // EXTERNAL HTTP/HTTPS URLs: Use Smart Fallback
-
     // CRITICAL: Detect domains that are KNOWN to lack CORS headers
     // These must use proxy FIRST to prevent canvas taint!
     const knownCorsBlockedDomains = [
@@ -186,14 +186,23 @@ async function loadImageToCanvas(
             console.log('[Engine] Proxy load SUCCESS (proactive):', img.width, 'x', img.height);
             return img;
         } catch (proxyError) {
-            console.error('[Engine] Proxy load failed for CORS-blocked domain:', proxyError);
-            const placeholder = createErrorPlaceholder(
-                typeof options.width === 'number' ? options.width : 200,
-                typeof options.height === 'number' ? options.height : 200
-            );
-            if (options.left) placeholder.set({ left: options.left });
-            if (options.top) placeholder.set({ top: options.top });
-            return placeholder;
+            console.warn('[Engine] Proxy failed, attempting direct load as fallback...', proxyError);
+
+            // ✅ BUG #7 FIX: Fallback to direct load
+            try {
+                const img = await tryLoad(url);
+                console.log('[Engine] Direct load SUCCESS (after proxy fail):', img.width, 'x', img.height);
+                return img;
+            } catch (directError) {
+                console.error('[Engine] Both proxy and direct failed:', directError);
+                const placeholder = createErrorPlaceholder(
+                    typeof options.width === 'number' ? options.width : 200,
+                    typeof options.height === 'number' ? options.height : 200
+                );
+                if (options.left) placeholder.set({ left: options.left });
+                if (options.top) placeholder.set({ top: options.top });
+                return placeholder;
+            }
         }
     }
 
@@ -442,11 +451,14 @@ export async function renderTemplate(
 
         let fabricObject: fabric.FabricObject | null = null;
 
+        // ✅ INTERACTIVE MODE: Set selectable/evented based on config
         const commonOptions = {
             left: el.x,
             top: el.y,
             angle: el.rotation || 0,
             opacity: el.opacity ?? 1,
+            selectable: config.interactive && !el.locked, // ✅ Enable for Editor
+            evented: config.interactive && !el.locked,     // ✅ Enable for Editor
         };
 
         switch (el.type) {
@@ -456,25 +468,28 @@ export async function renderTemplate(
                 // Resolve dynamic text
                 let text = textEl.text;
 
-                // Check for isDynamic and dynamicField property
-                if (textEl.isDynamic && textEl.dynamicField) {
-                    const csvColumn = fieldMapping[textEl.dynamicField];
-                    if (csvColumn && rowData[csvColumn] !== undefined) {
-                        text = rowData[csvColumn];
+                // ✅ Replace fields if we have data (generation OR preview mode)
+                if (rowData && Object.keys(rowData).length > 0) {
+                    // Check for isDynamic and dynamicField property
+                    if (textEl.isDynamic && textEl.dynamicField) {
+                        const csvColumn = fieldMapping[textEl.dynamicField];
+                        if (csvColumn && rowData[csvColumn] !== undefined) {
+                            text = rowData[csvColumn];
+                        }
                     }
-                }
 
-                // Also check for {{field}} patterns in text
-                text = replaceDynamicFields(text, rowData, fieldMapping);
+                    // Also check for {{field}} patterns in text
+                    text = replaceDynamicFields(text, rowData, fieldMapping);
 
-                // If still no replacement, try matching by element name
-                if (text === textEl.text) {
-                    const elementName = textEl.name.toLowerCase();
-                    for (const [field, column] of Object.entries(fieldMapping)) {
-                        if (elementName.includes(field.toLowerCase()) || field.toLowerCase().includes(elementName)) {
-                            if (rowData[column] !== undefined) {
-                                text = rowData[column];
-                                break;
+                    // If still no replacement, try matching by element name
+                    if (text === textEl.text) {
+                        const elementName = textEl.name.toLowerCase();
+                        for (const [field, column] of Object.entries(fieldMapping)) {
+                            if (elementName.includes(field.toLowerCase()) || field.toLowerCase().includes(elementName)) {
+                                if (rowData[column] !== undefined) {
+                                    text = rowData[column];
+                                    break;
+                                }
                             }
                         }
                     }
@@ -513,6 +528,30 @@ export async function renderTemplate(
                     textbox.strokeWidth = textEl.strokeWidth;
                 }
 
+                // Background box for text
+                if (textEl.backgroundEnabled) {
+                    const group = new fabric.Group([
+                        new fabric.Rect({
+                            width: textEl.width,
+                            height: textEl.height,
+                            fill: textEl.backgroundColor || '#FFFFFF',
+                            rx: textEl.backgroundCornerRadius || 8,
+                            ry: textEl.backgroundCornerRadius || 8,
+                        }),
+                        textbox,
+                    ], {
+                        left: textEl.x,
+                        top: textEl.y,
+                        angle: textEl.rotation || 0,
+                        opacity: textEl.opacity,
+                        selectable: config.interactive && !textEl.locked,
+                        evented: config.interactive && !textEl.locked,
+                    });
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    (group as any).elementId = el.id;
+                    return { index, obj: group };
+                }
+
                 fabricObject = textbox;
                 break;
             }
@@ -547,6 +586,19 @@ export async function renderTemplate(
                     if (img.height && imageEl.height) {
                         scaleY = imageEl.height / img.height;
                         img.scaleY = scaleY;
+                    }
+
+                    // Corner radius via clipPath
+                    if (imageEl.cornerRadius && imageEl.cornerRadius > 0) {
+                        const clipRect = new fabric.Rect({
+                            width: img.width || imageEl.width,
+                            height: img.height || imageEl.height,
+                            rx: imageEl.cornerRadius / scaleX,
+                            ry: imageEl.cornerRadius / scaleY,
+                            originX: 'center',
+                            originY: 'center',
+                        });
+                        img.set({ clipPath: clipRect });
                     }
 
                     // Debug: Log final image properties
@@ -615,6 +667,33 @@ export async function renderTemplate(
                 }
                 break;
             }
+
+            // ✅ BUG #6 FIX: Frame Support
+            case 'frame': {
+                const frameEl = el as FrameElement;
+
+                fabricObject = new fabric.Rect({
+                    ...commonOptions,
+                    width: frameEl.width,
+                    height: frameEl.height,
+                    fill: frameEl.fill || 'rgba(0, 0, 0, 0.05)',
+                    stroke: frameEl.stroke || '#cccccc',
+                    strokeWidth: frameEl.strokeWidth || 1,
+                    strokeDashArray: [5, 5], // Dashed border for frames
+                    rx: frameEl.cornerRadius || 0,
+                    ry: frameEl.cornerRadius || 0,
+                });
+
+                // Note: Actual layout logic handles child positions in store
+                // Frame visualization is just the container box here
+                break;
+            }
+        }
+
+        if (fabricObject) {
+            // ✅ Attach element ID for event handling in Editor
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (fabricObject as any).elementId = el.id;
         }
 
         return { index, obj: fabricObject };
@@ -628,7 +707,7 @@ export async function renderTemplate(
     let addedCount = 0;
     results
         .sort((a, b) => a.index - b.index)
-        .forEach(({ obj, index }) => {
+        .forEach(({ obj }) => {
             if (obj) {
                 canvas.add(obj);
                 addedCount++;
