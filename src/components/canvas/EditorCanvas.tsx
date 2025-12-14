@@ -121,6 +121,19 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 useEditorStore.getState().selectElement(null);
             });
 
+            // ✅ FIX: Set flag during LIVE drag/resize to prevent render interference
+            canvas.on('object:moving', () => {
+                isUpdatingFromFabric.current = true;
+            });
+
+            canvas.on('object:scaling', () => {
+                isUpdatingFromFabric.current = true;
+            });
+
+            canvas.on('object:rotating', () => {
+                isUpdatingFromFabric.current = true;
+            });
+
             canvas.on('object:modified', (e) => {
                 const obj = e.target;
                 if (!obj) return;
@@ -140,15 +153,39 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 // ✅ FIX: Track this update to skip redundant renders
                 lastFabricUpdateRef.current = { id, x: newX, y: newY, width: newWidth, height: newHeight };
 
-                store.updateElement(id, {
-                    x: newX,
-                    y: newY,
-                    width: newWidth,
-                    height: newHeight,
-                    rotation: newRotation,
-                });
-                obj.set({ scaleX: 1, scaleY: 1 });
-                obj.setCoords();
+                // ✅ FIX: Handle Textbox fontSize scaling
+                const el = elementsRef.current.find(e => e.id === id);
+                if (el?.type === 'text' && obj.type === 'textbox') {
+                    const textbox = obj as fabric.Textbox;
+                    const originalFontSize = textbox.fontSize || 16;
+                    const scaleFactor = obj.scaleY || 1;
+                    const newFontSize = Math.max(8, Math.round(originalFontSize * scaleFactor));
+
+                    store.updateElement(id, {
+                        x: newX,
+                        y: newY,
+                        width: newWidth,
+                        height: newHeight,
+                        rotation: newRotation,
+                        fontSize: newFontSize,  // ✅ Scale fontSize
+                    });
+
+                    // Apply fontSize to Fabric object before resetting scale
+                    textbox.set({ fontSize: newFontSize, scaleX: 1, scaleY: 1 });
+                    textbox.setCoords();
+                } else {
+                    // Non-text elements: standard update
+                    store.updateElement(id, {
+                        x: newX,
+                        y: newY,
+                        width: newWidth,
+                        height: newHeight,
+                        rotation: newRotation,
+                    });
+                    obj.set({ scaleX: 1, scaleY: 1 });
+                    obj.setCoords();
+                }
+
                 store.pushHistory();
                 // ✅ FIX: Extend protection window (must be > 16ms render debounce)
                 setTimeout(() => {
@@ -253,7 +290,9 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 elements,
                 { width: canvasWidth, height: canvasHeight, backgroundColor, interactive: true },
                 previewMode ? (DEFAULT_DUMMY_DATA as unknown as Record<string, string>) : {},
-                {}
+                {},
+                // ✅ FIX: Pass isStale callback for async race protection
+                () => renderVersionRef.current !== currentVersion
             );
 
             if (renderVersionRef.current !== currentVersion || !fabricCanvasRef.current) {

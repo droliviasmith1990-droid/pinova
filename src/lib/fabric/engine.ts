@@ -96,7 +96,8 @@ export async function renderTemplate(
     elements: Element[],
     config: RenderConfig,
     rowData: Record<string, string> = {},
-    fieldMapping: FieldMapping = {}
+    fieldMapping: FieldMapping = {},
+    isStale?: () => boolean  // ✅ NEW: Optional callback to check if render is stale
 ): Promise<void> {
     canvas.setDimensions({ width: config.width, height: config.height });
     // ✅ FIX: Clear BEFORE setting backgroundColor (clear() may reset it)
@@ -119,6 +120,9 @@ export async function renderTemplate(
             left: el.x, top: el.y, angle: el.rotation || 0, opacity: el.opacity ?? 1,
             selectable: config.interactive && !el.locked,
             evented: config.interactive && !el.locked,
+            // ✅ FIX: Set origin to top-left to match coordinate system
+            originX: 'left' as const,
+            originY: 'top' as const,
         };
 
         if (el.type === 'text') {
@@ -218,6 +222,12 @@ export async function renderTemplate(
     });
 
     const results = await Promise.all(promises);
+
+    // ✅ FIX: Check if render is stale AFTER async operations complete
+    if (isStale?.()) {
+        return; // Abort - newer render has started
+    }
+
     results.sort((a, b) => a.index - b.index).forEach(({ obj }) => {
         if (obj) canvas.add(obj);
     });
