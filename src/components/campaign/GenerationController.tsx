@@ -250,10 +250,11 @@ export function GenerationController({
             const uploadResult = await uploadResponse.json();
 
             if (uploadResult.url) {
-                // Save to database
+                // Save to database - CRITICAL: include credentials for auth
                 await fetch('/api/generated-pins', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include', // Required for cookie-based auth
                     body: JSON.stringify({
                         campaign_id: campaignId,
                         user_id: userId,
@@ -384,6 +385,7 @@ export function GenerationController({
                         await fetch('/api/generated-pins', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include', // Required for cookie-based auth
                             body: JSON.stringify({
                                 campaign_id: campaignId,
                                 user_id: userId,

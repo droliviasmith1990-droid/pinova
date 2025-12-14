@@ -346,11 +346,11 @@ export async function renderTemplate(
     // Sort elements by zIndex
     const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
 
-    // 2. Iterate and Render Elements
-    // We use Promise.all to load images in parallel
-    await Promise.all(sortedElements.map(async (el) => {
+    // 2. Create all fabric objects in parallel (for speed)
+    // BUT we'll add them to canvas in order AFTER all are created (for correct z-index)
+    const fabricObjectPromises = sortedElements.map(async (el, index): Promise<{ index: number; obj: fabric.FabricObject | null }> => {
         // Only process visible elements
-        if (el.visible === false) return;
+        if (el.visible === false) return { index, obj: null };
 
         let fabricObject: fabric.FabricObject | null = null;
 
@@ -491,12 +491,23 @@ export async function renderTemplate(
             }
         }
 
-        if (fabricObject) {
-            canvas.add(fabricObject);
-        }
-    }));
+        return { index, obj: fabricObject };
+    });
 
-    // 3. Final Render (Crucial for Node)
+    // Wait for all objects to be created
+    const results = await Promise.all(fabricObjectPromises);
+
+    // 3. Add objects to canvas IN ORDER (crucial for correct z-index)
+    // Sort by original index to maintain z-order
+    results
+        .sort((a, b) => a.index - b.index)
+        .forEach(({ obj }) => {
+            if (obj) {
+                canvas.add(obj);
+            }
+        });
+
+    // 4. Final Render (Crucial for Node)
     canvas.renderAll();
 }
 
