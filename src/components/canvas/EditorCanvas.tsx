@@ -25,18 +25,21 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
 
-    // ✅ FIX: Use refs for mutable data to remove them from initCanvas dependencies
-    // This prevents the canvas from being destroyed/recreated on every update
+    // ✅ FIX: Use refs for mutable data - canvas init should NOT depend on these
     const elementsRef = useRef<Element[]>([]);
     const editingTextRef = useRef<string>("");
     const editingIdRef = useRef<string | null>(null);
     const selectedIdsRef = useRef<string[]>([]);
+    const canvasSizeRef = useRef({ width: 1000, height: 1500 });
+    const backgroundColorRef = useRef('#FFFFFF');
 
     const isUpdatingFromFabric = useRef(false);
     const [isCanvasReady, setIsCanvasReady] = useState(false);
 
     // ✅ FIX: Add render version to cancel stale async renders
     const renderVersionRef = useRef(0);
+    // ✅ FIX: Track last Fabric update to skip redundant renders
+    const lastFabricUpdateRef = useRef<{ id: string, x: number, y: number, width: number, height: number } | null>(null);
 
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; isOpen: boolean }>({ x: 0, y: 0, isOpen: false });
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -47,11 +50,7 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
     const {
         elements,
         selectedIds,
-        selectElement,
-        updateElement,
-        pushHistory,
         zoom,
-        setZoom,
         backgroundColor,
         canvasSize,
         previewMode,
@@ -59,153 +58,154 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         useShallow((s) => ({
             elements: s.elements,
             selectedIds: s.selectedIds,
-            selectElement: s.selectElement,
-            updateElement: s.updateElement,
-            pushHistory: s.pushHistory,
             zoom: s.zoom,
-            setZoom: s.setZoom,
             backgroundColor: s.backgroundColor,
             canvasSize: s.canvasSize,
             previewMode: s.previewMode,
         }))
     );
 
-    // Keep refs in sync with store/state
+    const canvasWidth = canvasSize.width;
+    const canvasHeight = canvasSize.height;
+
+    // ✅ Keep refs in sync with store/state
     useEffect(() => { elementsRef.current = elements; }, [elements]);
     useEffect(() => { editingTextRef.current = editingText; }, [editingText]);
     useEffect(() => { editingIdRef.current = editingId; }, [editingId]);
     useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
-
-    const canvasWidth = canvasSize.width;
-    const canvasHeight = canvasSize.height;
+    useEffect(() => { canvasSizeRef.current = canvasSize; }, [canvasSize]);
+    useEffect(() => { backgroundColorRef.current = backgroundColor; }, [backgroundColor]);
 
     // ============================================
-    // Canvas Initialization 
+    // Canvas Initialization - RUNS ONLY ONCE
     // ============================================
-    const initCanvas = useCallback(async () => {
-        if (!canvasElRef.current) return;
-
-        // Cleanup existing canvas
-        if (fabricCanvasRef.current) {
-            fabricCanvasRef.current.off();
-            fabricCanvasRef.current.clear();
-            fabricCanvasRef.current.dispose();
-            fabricCanvasRef.current = null;
-        }
-
-        // Small delay to ensure DOM is ready/clean
-        await new Promise(resolve => setTimeout(resolve, 50));
-
-        const canvas = new fabric.Canvas(canvasElRef.current, {
-            width: canvasWidth,
-            height: canvasHeight,
-            selection: true,
-            preserveObjectStacking: true,
-            backgroundColor: backgroundColor,
-            controlsAboveOverlay: true,
-        });
-
-        fabricCanvasRef.current = canvas;
-        setFabricRef(fabricCanvasRef);
-        setIsCanvasReady(true);
-
-        // --- Event Listeners ---
-        // We use refs (elementsRef) to access latest data without triggering re-init
-
-        canvas.on('selection:created', (e) => {
-            if (isUpdatingFromFabric.current) return;
-            const id = e.selected?.[0] ? getElementId(e.selected[0]) : null;
-            if (id) selectElement(id);
-        });
-
-        canvas.on('selection:updated', (e) => {
-            if (isUpdatingFromFabric.current) return;
-            const id = e.selected?.[0] ? getElementId(e.selected[0]) : null;
-            if (id) selectElement(id);
-        });
-
-        canvas.on('selection:cleared', () => {
-            if (isUpdatingFromFabric.current) return;
-            selectElement(null);
-        });
-
-        canvas.on('object:modified', (e) => {
-            const obj = e.target;
-            if (!obj) return;
-            const id = getElementId(obj);
-            if (!id) return;
-
-            isUpdatingFromFabric.current = true;
-            updateElement(id, {
-                x: obj.left || 0,
-                y: obj.top || 0,
-                width: Math.max(20, (obj.width || 100) * (obj.scaleX || 1)),
-                height: Math.max(20, (obj.height || 100) * (obj.scaleY || 1)),
-                rotation: obj.angle || 0,
-            });
-            obj.set({ scaleX: 1, scaleY: 1 });
-            obj.setCoords();
-            pushHistory();
-            setTimeout(() => { isUpdatingFromFabric.current = false; }, 50);
-        });
-
-        canvas.on('mouse:dblclick', (e) => {
-            const obj = e.target;
-            const id = obj ? getElementId(obj) : null;
-            // Use ref to find element without stale closure
-            const el = elementsRef.current.find(e => e.id === id);
-
-            if (el && el.type === 'text' && !el.locked) {
-                setEditingId(el.id);
-                setEditingText((el as TextElement).text);
-                setTimeout(() => textAreaRef.current?.focus(), 50);
-            }
-        });
-
-        canvas.on('mouse:down', (e) => {
-            const evt = e.e as MouseEvent;
-            if (evt.button === 2) {
-                evt.preventDefault();
-                setContextMenu({ x: evt.clientX, y: evt.clientY, isOpen: true });
-            } else {
-                // ✅ FIX: Use functional update to check current state, not stale closure
-                setContextMenu(prev => prev.isOpen ? { ...prev, isOpen: false } : prev);
-            }
-            // ✅ FIX: Use ref instead of stale editingId closure
-            const currentEditingId = editingIdRef.current;
-            if (currentEditingId) {
-                // Clicked outside - save using ref data
-                const el = elementsRef.current.find(e => e.id === currentEditingId);
-                if (el && el.type === 'text') {
-                    updateElement(currentEditingId, { text: editingTextRef.current });
-                    pushHistory();
-                }
-                setEditingId(null);
-            }
-        });
-
-        // ✅ FIX: Use functional update for zoom to avoid dependency loop
-        canvas.on('mouse:wheel', (opt) => {
-            if (opt.e.ctrlKey || opt.e.metaKey) {
-                opt.e.preventDefault();
-                opt.e.stopPropagation();
-                const delta = opt.e.deltaY;
-                const scaleBy = 1.1;
-                const dir = delta > 0 ? -1 : 1;
-
-                setZoom(prevZoom => {
-                    const newZoom = dir > 0 ? prevZoom * scaleBy : prevZoom / scaleBy;
-                    return Math.max(0.1, Math.min(3, newZoom));
-                });
-            }
-        });
-
-    }, [canvasWidth, canvasHeight, backgroundColor, selectElement, updateElement,
-        pushHistory, setFabricRef, setZoom]); // ✅ Stable Dependencies: NO 'elements' or 'zoom' value
-
-    // Initial Load Effect
     useEffect(() => {
+        // ✅ FIX: Check fabricCanvasRef instead of separate flag (handles StrictMode)
+        if (!canvasElRef.current) return;
+        if (fabricCanvasRef.current) return; // Already initialized
+
+        const initCanvas = async () => {
+            // Small delay to ensure DOM is ready
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            if (!canvasElRef.current) return;
+
+            const canvas = new fabric.Canvas(canvasElRef.current, {
+                width: canvasSizeRef.current.width,
+                height: canvasSizeRef.current.height,
+                selection: true,
+                preserveObjectStacking: true,
+                backgroundColor: backgroundColorRef.current,
+                controlsAboveOverlay: true,
+            });
+
+            fabricCanvasRef.current = canvas;
+            setFabricRef(fabricCanvasRef);
+            setIsCanvasReady(true);
+
+            // ✅ Event Listeners use getState() for fresh store access
+            canvas.on('selection:created', (e) => {
+                if (isUpdatingFromFabric.current) return;
+                const id = e.selected?.[0] ? getElementId(e.selected[0]) : null;
+                if (id) useEditorStore.getState().selectElement(id);
+            });
+
+            canvas.on('selection:updated', (e) => {
+                if (isUpdatingFromFabric.current) return;
+                const id = e.selected?.[0] ? getElementId(e.selected[0]) : null;
+                if (id) useEditorStore.getState().selectElement(id);
+            });
+
+            canvas.on('selection:cleared', () => {
+                if (isUpdatingFromFabric.current) return;
+                useEditorStore.getState().selectElement(null);
+            });
+
+            canvas.on('object:modified', (e) => {
+                const obj = e.target;
+                if (!obj) return;
+                const id = getElementId(obj);
+                if (!id) return;
+
+                isUpdatingFromFabric.current = true;
+                const store = useEditorStore.getState();
+
+                // ✅ FIX: Use Fabric's built-in methods for accurate geometry
+                const newX = obj.left || 0;
+                const newY = obj.top || 0;
+                const newWidth = Math.max(20, obj.getScaledWidth());
+                const newHeight = Math.max(20, obj.getScaledHeight());
+                const newRotation = obj.angle || 0;
+
+                // ✅ FIX: Track this update to skip redundant renders
+                lastFabricUpdateRef.current = { id, x: newX, y: newY, width: newWidth, height: newHeight };
+
+                store.updateElement(id, {
+                    x: newX,
+                    y: newY,
+                    width: newWidth,
+                    height: newHeight,
+                    rotation: newRotation,
+                });
+                obj.set({ scaleX: 1, scaleY: 1 });
+                obj.setCoords();
+                store.pushHistory();
+                // ✅ FIX: Extend protection window (must be > 16ms render debounce)
+                setTimeout(() => {
+                    isUpdatingFromFabric.current = false;
+                    lastFabricUpdateRef.current = null;
+                }, 300);
+            });
+
+            canvas.on('mouse:dblclick', (e) => {
+                const obj = e.target;
+                const id = obj ? getElementId(obj) : null;
+                const el = elementsRef.current.find(e => e.id === id);
+
+                if (el && el.type === 'text' && !el.locked) {
+                    setEditingId(el.id);
+                    setEditingText((el as TextElement).text);
+                    setTimeout(() => textAreaRef.current?.focus(), 50);
+                }
+            });
+
+            canvas.on('mouse:down', (e) => {
+                const evt = e.e as MouseEvent;
+                if (evt.button === 2) {
+                    evt.preventDefault();
+                    setContextMenu({ x: evt.clientX, y: evt.clientY, isOpen: true });
+                } else {
+                    setContextMenu(prev => prev.isOpen ? { ...prev, isOpen: false } : prev);
+                }
+                const currentEditingId = editingIdRef.current;
+                if (currentEditingId) {
+                    const el = elementsRef.current.find(e => e.id === currentEditingId);
+                    if (el && el.type === 'text') {
+                        useEditorStore.getState().updateElement(currentEditingId, { text: editingTextRef.current });
+                        useEditorStore.getState().pushHistory();
+                    }
+                    setEditingId(null);
+                }
+            });
+
+            canvas.on('mouse:wheel', (opt) => {
+                if (opt.e.ctrlKey || opt.e.metaKey) {
+                    opt.e.preventDefault();
+                    opt.e.stopPropagation();
+                    const delta = opt.e.deltaY;
+                    const scaleBy = 1.1;
+                    const dir = delta > 0 ? -1 : 1;
+
+                    useEditorStore.getState().setZoom(prevZoom => {
+                        const newZoom = dir > 0 ? prevZoom * scaleBy : prevZoom / scaleBy;
+                        return Math.max(0.1, Math.min(3, newZoom));
+                    });
+                }
+            });
+        };
+
         initCanvas();
+
         return () => {
             if (fabricCanvasRef.current) {
                 fabricCanvasRef.current.off();
@@ -215,26 +215,39 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
             }
             setIsCanvasReady(false);
         };
-    }, [initCanvas]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // ✅ EMPTY DEPS - Only run once on mount
 
     // ============================================
     // Rendering Loop - With Debounce & Cancellation
-    // ✅ FIX: Removed selectedIds from dependencies - selection changes should NOT trigger full re-render
     // ============================================
     useEffect(() => {
-        if (!fabricCanvasRef.current || !isCanvasReady || isUpdatingFromFabric.current) return;
+        // ✅ FIX: Check flag IMMEDIATELY - don't even schedule timeout if user is interacting
+        if (isUpdatingFromFabric.current) return;
+        if (!fabricCanvasRef.current || !isCanvasReady) return;
 
-        // ✅ FIX: Increment version to cancel any in-flight renders
         const currentVersion = ++renderVersionRef.current;
 
-        // Debounce to coalesce rapid element additions
         const timeoutId = setTimeout(async () => {
-            // Check if this render is still current
+            // ✅ FIX: Check flag INSIDE setTimeout (after debounce period)
+            if (isUpdatingFromFabric.current) {
+                // ✅ FIX: Check if this render would be redundant
+                const lastUpdate = lastFabricUpdateRef.current;
+                if (lastUpdate) {
+                    const storeEl = elements.find(e => e.id === lastUpdate.id);
+                    if (storeEl &&
+                        Math.abs(storeEl.x - lastUpdate.x) < 1 &&
+                        Math.abs(storeEl.y - lastUpdate.y) < 1) {
+                        // Skip render - positions already match what Fabric set
+                        return;
+                    }
+                }
+                return; // Skip render - user is actively dragging
+            }
             if (renderVersionRef.current !== currentVersion || !fabricCanvasRef.current) {
-                return; // Stale render - abort
+                return;
             }
 
-            // Call Shared Engine
             await renderTemplate(
                 fabricCanvasRef.current,
                 elements,
@@ -243,12 +256,11 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 {}
             );
 
-            // Check again after async operation
             if (renderVersionRef.current !== currentVersion || !fabricCanvasRef.current) {
-                return; // Became stale during render
+                return;
             }
 
-            // ✅ Restore selection using ref (not dependency) after full re-render
+            // Restore selection after render
             const currentSelectedIds = selectedIdsRef.current;
             if (currentSelectedIds.length > 0) {
                 const objs = fabricCanvasRef.current.getObjects();
@@ -259,13 +271,13 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
             }
 
             fabricCanvasRef.current.requestRenderAll();
-        }, 16); // ~60fps debounce (one frame)
+        }, 16);
 
         return () => clearTimeout(timeoutId);
-    }, [elements, backgroundColor, canvasWidth, canvasHeight, isCanvasReady, previewMode]); // ✅ FIX: NO selectedIds here!
+    }, [elements, backgroundColor, canvasWidth, canvasHeight, isCanvasReady, previewMode]);
 
     // ============================================
-    // Selection Sync - Separate from render to avoid full re-render on click
+    // Selection Sync
     // ============================================
     useEffect(() => {
         if (!fabricCanvasRef.current || !isCanvasReady) return;
@@ -273,19 +285,16 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         const canvas = fabricCanvasRef.current;
 
         if (selectedIds.length === 0) {
-            // Clear selection without triggering events
             canvas.discardActiveObject();
             canvas.requestRenderAll();
             return;
         }
 
-        // Find and select the object
         const objs = canvas.getObjects();
         const targetObj = objs.find(o => getElementId(o) === selectedIds[0]);
 
         if (targetObj) {
             const currentActive = canvas.getActiveObject();
-            // Only update if different (prevent loop)
             if (currentActive !== targetObj) {
                 isUpdatingFromFabric.current = true;
                 canvas.setActiveObject(targetObj);
@@ -295,7 +304,9 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         }
     }, [selectedIds, isCanvasReady]);
 
-    // Sync Zoom Effect (Separate from init)
+    // ============================================
+    // Zoom Sync
+    // ============================================
     useEffect(() => {
         if (!fabricCanvasRef.current || !isCanvasReady) return;
         fabricCanvasRef.current.setZoom(zoom);
@@ -303,13 +314,22 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
         fabricCanvasRef.current.requestRenderAll();
     }, [zoom, canvasWidth, canvasHeight, isCanvasReady]);
 
+    // ============================================
+    // Canvas Size Change
+    // ============================================
+    useEffect(() => {
+        if (!fabricCanvasRef.current || !isCanvasReady) return;
+        fabricCanvasRef.current.setDimensions({ width: canvasWidth * zoom, height: canvasHeight * zoom });
+        fabricCanvasRef.current.requestRenderAll();
+    }, [canvasWidth, canvasHeight, zoom, isCanvasReady]);
+
     const handleTextSubmit = useCallback(() => {
         if (editingId && editingText !== undefined) {
-            updateElement(editingId, { text: editingText });
-            pushHistory();
+            useEditorStore.getState().updateElement(editingId, { text: editingText });
+            useEditorStore.getState().pushHistory();
         }
         setEditingId(null);
-    }, [editingId, editingText, updateElement, pushHistory]);
+    }, [editingId, editingText]);
 
     const editingElement = editingId ? elements.find(el => el.id === editingId) as TextElement : null;
 
