@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as fabric from 'fabric';
+import { createClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 import { Element } from '@/types/editor';
 import { renderTemplate, RenderConfig, FieldMapping } from '@/lib/fabric/engine';
 
@@ -37,18 +39,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Note: Font registration with registerFont from 'canvas' package
-        // is only needed when canvas package is installed for Node.js rendering.
-        // For now, we'll rely on system fonts or skip registration.
-        // 
-        // When canvas package is available:
-        // import { registerFont } from 'canvas';
-        // import path from 'path';
-        // const fontPath = path.join(process.cwd(), 'public', 'fonts', 'Roboto-Regular.ttf');
-        // registerFont(fontPath, { family: 'Roboto' });
-
         // Initialize Headless Canvas (StaticCanvas)
-        // fabric.StaticCanvas works in Node without JSDOM for basic rendering
         const canvas = new fabric.StaticCanvas(undefined, {
             width: canvasSize.width,
             height: canvasSize.height
@@ -72,11 +63,51 @@ export async function POST(req: NextRequest) {
         // Cleanup - dispose canvas
         canvas.dispose();
 
-        // In production, you would upload this to S3 and return that URL
-        // For now, return the data URL directly
+        // --- Upload to Supabase Storage ---
+
+        // 1. Prepare Buffer
+        const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(base64Data, 'base64');
+
+        // 2. Initialize Supabase Client
+        // Use Service Role Key if available (bypasses RLS), otherwise Anon Key
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+        if (!supabaseUrl || !supabaseKey) {
+            throw new Error('Server configuration error: Missing Supabase credentials');
+        }
+
+        const supabase = createClient(supabaseUrl, supabaseKey, {
+            auth: {
+                persistSession: false
+            }
+        });
+
+        // 3. Upload File
+        const fileName = `${uuidv4()}.png`;
+        const bucketName = 'generated_pins';
+
+        const { error: uploadError } = await supabase.storage
+            .from(bucketName)
+            .upload(fileName, buffer, {
+                contentType: 'image/png',
+                upsert: false
+            });
+
+        if (uploadError) {
+            console.error('Supabase Upload Error:', uploadError);
+            throw new Error(`Failed to upload generated image: ${uploadError.message}`);
+        }
+
+        // 4. Get Public URL
+        const { data: { publicUrl } } = supabase.storage
+            .from(bucketName)
+            .getPublicUrl(fileName);
+
         return NextResponse.json({
             success: true,
-            url: dataUrl
+            url: publicUrl
         });
 
     } catch (error: unknown) {
