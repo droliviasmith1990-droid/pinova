@@ -303,9 +303,9 @@ export function GenerationController({
         shouldPauseRef.current = false;
 
         // Determine render mode
-        const mode = settings.renderMode === 'auto'
-            ? (csvData.length > 50 ? 'server' : 'client')
-            : settings.renderMode;
+        // CHANGED: Default to 'client' even in auto mode for reliability
+        // Server mode was causing 500 errors on large batches
+        const mode = settings.renderMode === 'server' ? 'server' : 'client';
 
         setActiveMode(mode);
         log(`Starting generation in ${mode} mode from index ${startIndex}`);
@@ -314,7 +314,9 @@ export function GenerationController({
         let current = startIndex;
 
         try {
-            const CONCURRENCY_LIMIT = 5;
+            // REDUCED: Concurrency from 5 to 3 to prevent memory pressure and slowdown
+            const CONCURRENCY_LIMIT = 3;
+            const DELAY_BETWEEN_RENDERS_MS = 100; // Add delay to prevent overwhelming the browser
 
             while (current < csvData.length && !shouldPauseRef.current) {
                 if (!isMountedRef.current) return;
@@ -363,6 +365,11 @@ export function GenerationController({
                     // Concurrency control
                     if (activeUploadsRef.current.size >= CONCURRENCY_LIMIT) {
                         await Promise.race(activeUploadsRef.current);
+                    }
+
+                    // Add small delay between renders to prevent memory pressure
+                    if (DELAY_BETWEEN_RENDERS_MS > 0) {
+                        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_RENDERS_MS));
                     }
 
                 } catch (error) {

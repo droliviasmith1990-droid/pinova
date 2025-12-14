@@ -235,13 +235,37 @@ function getDynamicImageUrl(
     fieldMapping: FieldMapping
 ): string {
     const src = element.imageUrl || '';
+    const isBrowser = typeof window !== 'undefined';
+    const elementName = element.name || '';
 
-    // Priority 1: Check for explicit dynamic mapping
+    // Debug helper
+    const debug = (msg: string, value?: string) => {
+        if (isBrowser) {
+            console.log(`[Engine] getDynamicImageUrl [${elementName}]: ${msg}`, value || '');
+        }
+    };
+
+    debug('Starting resolution for element');
+
+    // Priority 1: Check for explicit dynamic mapping via isDynamic + dynamicSource
     if (element.isDynamic && element.dynamicSource) {
+        debug('Checking dynamicSource:', element.dynamicSource);
+
+        // First check fieldMapping
         const column = fieldMapping[element.dynamicSource];
         if (column && rowData[column]) {
             const value = rowData[column];
             if (value && (value.startsWith('http') || value.startsWith('data:'))) {
+                debug('Found via fieldMapping:', value.substring(0, 60));
+                return value;
+            }
+        }
+
+        // Also check direct CSV column name (dynamicSource might BE the column name)
+        if (rowData[element.dynamicSource]) {
+            const value = rowData[element.dynamicSource];
+            if (value && (value.startsWith('http') || value.startsWith('data:'))) {
+                debug('Found via direct dynamicSource column:', value.substring(0, 60));
                 return value;
             }
         }
@@ -249,21 +273,49 @@ function getDynamicImageUrl(
 
     // Priority 2: Check if imageUrl contains {{field}} pattern
     if (src.includes('{{')) {
-        return replaceDynamicFields(src, rowData, fieldMapping);
+        const resolved = replaceDynamicFields(src, rowData, fieldMapping);
+        debug('Resolved template pattern:', resolved.substring(0, 60));
+        return resolved;
     }
 
-    // Priority 3: Fallback - Check element name for field mapping
-    const elementName = element.name.toLowerCase().replace(/\s+/g, '');
+    // Priority 3: Try to match element name to CSV columns DIRECTLY
+    // This handles "image1", "image2", "Image 1", "product_image", etc.
+    const normalizedName = elementName.toLowerCase().replace(/[\s_-]+/g, '');
+
+    // Check each CSV column for a matching name
+    for (const [csvColumn, value] of Object.entries(rowData)) {
+        if (!value || (!value.startsWith('http') && !value.startsWith('data:'))) {
+            continue; // Skip non-URL values
+        }
+
+        const normalizedColumn = csvColumn.toLowerCase().replace(/[\s_-]+/g, '');
+
+        // Exact match
+        if (normalizedName === normalizedColumn) {
+            debug(`Matched directly to CSV column [${csvColumn}]:`, value.substring(0, 60));
+            return value;
+        }
+
+        // Contains match (e.g., "image1" contains "image" and column is "image1")
+        if (normalizedColumn.includes(normalizedName) || normalizedName.includes(normalizedColumn)) {
+            debug(`Partial match to CSV column [${csvColumn}]:`, value.substring(0, 60));
+            return value;
+        }
+    }
+
+    // Priority 4: Fallback - Check element name against field mapping names
     for (const [field, column] of Object.entries(fieldMapping)) {
-        const normalizedField = field.toLowerCase().replace(/\s+/g, '');
-        if (elementName === normalizedField || elementName.includes(normalizedField)) {
+        const normalizedField = field.toLowerCase().replace(/[\s_-]+/g, '');
+        if (normalizedName === normalizedField || normalizedName.includes(normalizedField) || normalizedField.includes(normalizedName)) {
             const value = rowData[column];
             if (value && (value.startsWith('http') || value.startsWith('data:'))) {
+                debug(`Matched via fieldMapping [${field}]:`, value.substring(0, 60));
                 return value;
             }
         }
     }
 
+    debug('No dynamic URL found, using src:', src.substring(0, 60));
     return src;
 }
 
