@@ -6,8 +6,11 @@ import { useEditorStore } from '@/stores/editorStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useFabricRefStore } from '@/hooks/useStageRef';
 import { ContextMenu } from './ContextMenu';
+import { DimensionBadge } from './DimensionBadge';
+import { ElementToolbar } from './ElementToolbar';
 import { renderTemplate } from '@/lib/fabric/engine';
-import { AlignmentGuides } from '@/lib/fabric/AlignmentGuides'; // ✅ NEW
+import { AlignmentGuides } from '@/lib/fabric/AlignmentGuides';
+import { applyCanvaStyleControls } from '@/lib/fabric/FabricControlConfig';
 import { TextElement, DEFAULT_DUMMY_DATA, Element } from '@/types/editor';
 
 interface EditorCanvasProps {
@@ -42,6 +45,24 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
     const [editingText, setEditingText] = useState<string>("");
     const textAreaRef = useRef<HTMLTextAreaElement>(null);
     const setFabricRef = useFabricRefStore((s) => s.setFabricRef);
+
+    // State for live dimension display during resize
+    const [dimensionBadge, setDimensionBadge] = useState<{
+        visible: boolean;
+        width: number;
+        height: number;
+        x: number;
+        y: number;
+    }>({ visible: false, width: 0, height: 0, x: 0, y: 0 });
+
+    // State for element toolbar
+    const [toolbarState, setToolbarState] = useState<{
+        visible: boolean;
+        x: number;
+        y: number;
+        width: number;
+        isLocked: boolean;
+    }>({ visible: false, x: 0, y: 0, width: 0, isLocked: false });
 
     const {
         elements, selectedIds, selectElement, updateElement, pushHistory,
@@ -134,7 +155,10 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
             setFabricRef(fabricCanvasRef);
             setIsCanvasReady(true);
 
-            // ✅ NEW: Initialize Smart Guides
+            // ✅ Apply Canva-style selection controls (purple borders, white handles)
+            applyCanvaStyleControls(canvas);
+
+            // ✅ Initialize Smart Guides
             if (guidesRef.current) {
                 guidesRef.current.dispose();
             }
@@ -159,19 +183,68 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
 
             canvas.on('selection:created', (e) => {
                 if (isUpdatingFromFabric.current) return;
-                const id = e.selected?.[0] ? getElementId(e.selected[0]) : null;
-                if (id) selectElement(id);
+                const obj = e.selected?.[0];
+                const id = obj ? getElementId(obj) : null;
+                if (id) {
+                    selectElement(id);
+                    // Show toolbar for selected element
+                    const rect = obj!.getBoundingRect();
+                    const el = elementsRef.current.find(el => el.id === id);
+                    setToolbarState({
+                        visible: true,
+                        x: rect.left,
+                        y: rect.top,
+                        width: rect.width,
+                        isLocked: el?.locked || false,
+                    });
+                }
             });
 
             canvas.on('selection:updated', (e) => {
                 if (isUpdatingFromFabric.current) return;
-                const id = e.selected?.[0] ? getElementId(e.selected[0]) : null;
-                if (id) selectElement(id);
+                const obj = e.selected?.[0];
+                const id = obj ? getElementId(obj) : null;
+                if (id) {
+                    selectElement(id);
+                    // Update toolbar position
+                    const rect = obj!.getBoundingRect();
+                    const el = elementsRef.current.find(el => el.id === id);
+                    setToolbarState({
+                        visible: true,
+                        x: rect.left,
+                        y: rect.top,
+                        width: rect.width,
+                        isLocked: el?.locked || false,
+                    });
+                }
             });
 
             canvas.on('selection:cleared', () => {
                 if (isUpdatingFromFabric.current) return;
                 selectElement(null);
+                // Hide toolbar
+                setToolbarState(prev => ({ ...prev, visible: false }));
+            });
+
+            // Live dimension display during scaling
+            canvas.on('object:scaling', (e) => {
+                const obj = e.target;
+                if (!obj) return;
+                const rect = obj.getBoundingRect();
+                const width = (obj.width || 100) * (obj.scaleX || 1);
+                const height = (obj.height || 100) * (obj.scaleY || 1);
+                setDimensionBadge({
+                    visible: true,
+                    width,
+                    height,
+                    x: rect.left + rect.width / 2,
+                    y: rect.top,
+                });
+            });
+
+            // Hide dimension badge when scaling ends
+            canvas.on('object:modified', () => {
+                setDimensionBadge(prev => ({ ...prev, visible: false }));
             });
 
             // ✅ FIX: "Snap-Back" & Geometry Handler
@@ -301,12 +374,27 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
 
                 if (renderVersionRef.current !== currentVersion) return;
 
+                // ✅ Apply Canva-style controls to new objects after render
+                applyCanvaStyleControls(fabricCanvasRef.current);
+
                 // Restore Selection
                 const currentSelectedIds = selectedIdsRef.current;
                 if (currentSelectedIds.length > 0) {
                     const objs = fabricCanvasRef.current.getObjects();
                     const active = objs.find(o => getElementId(o) === currentSelectedIds[0]);
-                    if (active) fabricCanvasRef.current.setActiveObject(active);
+                    if (active) {
+                        fabricCanvasRef.current.setActiveObject(active);
+                        // Update toolbar state for selected object
+                        const rect = active.getBoundingRect();
+                        const el = elementsRef.current.find(el => el.id === currentSelectedIds[0]);
+                        setToolbarState({
+                            visible: true,
+                            x: rect.left,
+                            y: rect.top,
+                            width: rect.width,
+                            isLocked: el?.locked || false,
+                        });
+                    }
                 }
 
                 // ✅ CRITICAL: Re-apply Zoom & Dimensions after renderTemplate reset
@@ -408,6 +496,53 @@ export function EditorCanvas({ containerWidth, containerHeight }: EditorCanvasPr
                 />
             )}
             <ContextMenu x={contextMenu.x} y={contextMenu.y} isOpen={contextMenu.isOpen} onClose={() => setContextMenu(prev => ({ ...prev, isOpen: false }))} />
+
+            {/* Live Dimension Badge during resize */}
+            <DimensionBadge
+                width={dimensionBadge.width}
+                height={dimensionBadge.height}
+                x={dimensionBadge.x + CANVAS_PADDING}
+                y={dimensionBadge.y + CANVAS_PADDING}
+                visible={dimensionBadge.visible}
+                zoom={zoom}
+            />
+
+            {/* Element Toolbar */}
+            <ElementToolbar
+                x={toolbarState.x + CANVAS_PADDING}
+                y={toolbarState.y + CANVAS_PADDING}
+                width={toolbarState.width}
+                visible={toolbarState.visible && !previewMode}
+                zoom={zoom}
+                isLocked={toolbarState.isLocked}
+                onRotate={() => {
+                    const selectedEl = elements.find(e => e.id === selectedIds[0]);
+                    if (selectedEl) {
+                        updateElement(selectedEl.id, { rotation: (selectedEl.rotation || 0) + 45 });
+                        pushHistory();
+                    }
+                }}
+                onToggleLock={() => {
+                    const selectedEl = elements.find(e => e.id === selectedIds[0]);
+                    if (selectedEl) {
+                        updateElement(selectedEl.id, { locked: !selectedEl.locked });
+                        pushHistory();
+                        setToolbarState(prev => ({ ...prev, isLocked: !prev.isLocked }));
+                    }
+                }}
+                onDuplicate={() => {
+                    const duplicateElement = useEditorStore.getState().duplicateElement;
+                    if (selectedIds[0]) duplicateElement(selectedIds[0]);
+                }}
+                onDelete={() => {
+                    const deleteElement = useEditorStore.getState().deleteElement;
+                    if (selectedIds[0]) deleteElement(selectedIds[0]);
+                }}
+                onMore={() => {
+                    // Could show a dropdown menu for more options
+                    console.log('More options clicked');
+                }}
+            />
         </div>
     );
 }

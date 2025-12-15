@@ -1,5 +1,6 @@
 import * as fabric from 'fabric';
 import { useSnappingSettingsStore, SnappingSettings } from '@/stores/snappingSettingsStore';
+import { detectOverlap, calculateSpacing, getProximityColor, BoundingBox } from './CollisionDetection';
 
 // Types for graduated magnetism
 type MagneticZone = 'far' | 'near' | 'lock' | 'none';
@@ -102,27 +103,23 @@ export class AlignmentGuides {
         this.canvas.requestRenderAll();
     }
 
-    // --- Graduated Zone Detection ---
+    // --- Simplified Zone Detection (uses single Snap Distance setting) ---
     private getZone(distance: number, isBoundary: boolean = false): MagneticZone {
-        const sens = this.settings.snapSensitivity;
-        const strengthMultiplier = this.settings.magneticStrength === 'strong' ? 1.5 :
-            this.settings.magneticStrength === 'weak' ? 0.6 : 1;
+        // Snap Distance (default 5px) - AUTO-SNAP when within this distance
+        const snapDistance = this.settings.magneticSnapThreshold || 5;
 
-        // Boundaries get extra magnetic pull
-        const boundaryBonus = isBoundary ? 1.3 : 1;
-        const effectiveSens = sens * strengthMultiplier * boundaryBonus;
+        // Boundaries get slightly larger detection zone
+        const boundaryBonus = isBoundary ? 1.2 : 1;
+        const adjustedSnapDistance = snapDistance * boundaryBonus;
 
-        // Precision lock zone (0-1px for instant snap)
-        if (this.settings.precisionLock && distance <= 1) return 'lock';
+        // Zone 3: LOCK - Within snap distance = INSTANT AUTO-SNAP to 0px
+        if (distance <= adjustedSnapDistance) return 'lock';
 
-        // Zone 3: Lock (0-5px adjusted)
-        if (distance <= effectiveSens * 0.35) return 'lock';
+        // Zone 2: Near (approaching snap zone) - visual feedback appears
+        if (distance <= adjustedSnapDistance * 2) return 'near';
 
-        // Zone 2: Near (5-10px adjusted)
-        if (distance <= effectiveSens * 0.7) return 'near';
-
-        // Zone 1: Far (10-15px adjusted)
-        if (distance <= effectiveSens) return 'far';
+        // Zone 1: Far (informational) - faint guide lines
+        if (distance <= adjustedSnapDistance * 3) return 'far';
 
         return 'none';
     }
@@ -321,8 +318,23 @@ export class AlignmentGuides {
     }
 
     private onObjectMoving(e: fabric.BasicTransformEvent<fabric.TPointerEvent> & { target: fabric.FabricObject }) {
-        if (!this.enabled || this.isScaling) return;
-        if (!this.settings.magneticSnapping && !this.settings.showGuideLines) return;
+        // DEBUG: Log entry
+        console.log('[AlignmentGuides] onObjectMoving triggered', {
+            enabled: this.enabled,
+            isScaling: this.isScaling,
+            magneticSnapping: this.settings.magneticSnapping,
+            showGuideLines: this.settings.showGuideLines,
+            snapThreshold: this.settings.magneticSnapThreshold,
+        });
+
+        if (!this.enabled || this.isScaling) {
+            console.log('[AlignmentGuides] Skipped: enabled=' + this.enabled + ', isScaling=' + this.isScaling);
+            return;
+        }
+        if (!this.settings.magneticSnapping && !this.settings.showGuideLines) {
+            console.log('[AlignmentGuides] Skipped: neither magneticSnapping nor showGuideLines enabled');
+            return;
+        }
 
         const activeObject = e.target;
         if (!activeObject) return;
@@ -455,15 +467,23 @@ export class AlignmentGuides {
             }
         }
 
-        // --- Apply Snaps ---
+        // --- Apply Snaps (FIXED: Direct position override for lock zone) ---
         let didSnapX = false;
         let didSnapY = false;
 
         if (bestSnapX && this.settings.magneticSnapping) {
-            const pull = this.getMagneticPull(bestSnapX.zone, Math.abs(bestSnapX.diff));
-            if (pull > 0) {
-                activeObject.set({ left: activeObject.left! + (bestSnapX.diff > 0 ? pull : -pull) });
-                didSnapX = bestSnapX.zone === 'lock';
+            if (bestSnapX.zone === 'lock') {
+                // LOCK ZONE: Directly set position to snap target (0px offset)
+                // This is the magnetic "click into place" behavior
+                activeObject.set({ left: activeObject.left! + bestSnapX.diff });
+                didSnapX = true;
+                console.log(`[SNAP-X] LOCKED to ${bestSnapX.target}px (was ${bestSnapX.diff}px away)`);
+            } else {
+                // Other zones: Apply partial pull for visual feedback
+                const pull = this.getMagneticPull(bestSnapX.zone, Math.abs(bestSnapX.diff));
+                if (pull > 0) {
+                    activeObject.set({ left: activeObject.left! + (bestSnapX.diff > 0 ? pull : -pull) });
+                }
             }
 
             this.verticalLines.push({
@@ -476,10 +496,17 @@ export class AlignmentGuides {
         }
 
         if (bestSnapY && this.settings.magneticSnapping) {
-            const pull = this.getMagneticPull(bestSnapY.zone, Math.abs(bestSnapY.diff));
-            if (pull > 0) {
-                activeObject.set({ top: activeObject.top! + (bestSnapY.diff > 0 ? pull : -pull) });
-                didSnapY = bestSnapY.zone === 'lock';
+            if (bestSnapY.zone === 'lock') {
+                // LOCK ZONE: Directly set position to snap target (0px offset)
+                activeObject.set({ top: activeObject.top! + bestSnapY.diff });
+                didSnapY = true;
+                console.log(`[SNAP-Y] LOCKED to ${bestSnapY.target}px (was ${bestSnapY.diff}px away)`);
+            } else {
+                // Other zones: Apply partial pull
+                const pull = this.getMagneticPull(bestSnapY.zone, Math.abs(bestSnapY.diff));
+                if (pull > 0) {
+                    activeObject.set({ top: activeObject.top! + (bestSnapY.diff > 0 ? pull : -pull) });
+                }
             }
 
             this.horizontalLines.push({
@@ -502,6 +529,92 @@ export class AlignmentGuides {
         if (this.settings.distanceIndicators) {
             const updatedRect = activeObject.getBoundingRect();
             this.computeDistanceBadges(updatedRect, canvasObjects, activeObject, canvasWidth, canvasHeight);
+        }
+
+        // --- Collision Detection (Universal for ALL elements) ---
+        if (this.settings.preventOverlap && this.settings.collisionMode !== 'freeform') {
+            const activeBox: BoundingBox = {
+                left: activeObject.left || 0,
+                top: activeObject.top || 0,
+                width: activeRect.width,
+                height: activeRect.height,
+            };
+
+            for (const obj of canvasObjects) {
+                if (obj === activeObject || !obj.visible) continue;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                if ((obj as any).name?.includes('guide')) continue;
+
+                const objRect = obj.getBoundingRect();
+                const targetBox: BoundingBox = {
+                    left: objRect.left,
+                    top: objRect.top,
+                    width: objRect.width,
+                    height: objRect.height,
+                };
+
+                const collision = calculateSpacing(activeBox, targetBox);
+                const minSpacing = this.settings.minimumSpacing;
+
+                // Check if collision or within minimum spacing
+                if (collision.collides || collision.distance < minSpacing) {
+                    const pushAmount = collision.collides
+                        ? Math.abs(collision.distance) + minSpacing
+                        : minSpacing - collision.distance;
+
+                    if (this.settings.collisionMode === 'block') {
+                        // Block mode: Push active object back
+                        switch (collision.direction) {
+                            case 'right':
+                                activeObject.set({ left: targetBox.left - activeBox.width - minSpacing });
+                                break;
+                            case 'left':
+                                activeObject.set({ left: targetBox.left + targetBox.width + minSpacing });
+                                break;
+                            case 'bottom':
+                                activeObject.set({ top: targetBox.top - activeBox.height - minSpacing });
+                                break;
+                            case 'top':
+                                activeObject.set({ top: targetBox.top + targetBox.height + minSpacing });
+                                break;
+                        }
+                        activeObject.setCoords();
+                    } else if (this.settings.collisionMode === 'push' && this.settings.autoPushElements) {
+                        // Push mode: Move the other element away
+                        switch (collision.direction) {
+                            case 'right':
+                                obj.set({ left: (obj.left || 0) + pushAmount });
+                                break;
+                            case 'left':
+                                obj.set({ left: (obj.left || 0) - pushAmount });
+                                break;
+                            case 'bottom':
+                                obj.set({ top: (obj.top || 0) + pushAmount });
+                                break;
+                            case 'top':
+                                obj.set({ top: (obj.top || 0) - pushAmount });
+                                break;
+                        }
+                        obj.setCoords();
+                    }
+
+                    // Add collision indicator badge
+                    if (this.settings.collisionIndicators) {
+                        const zoneName = collision.collides ? 'collision' :
+                            collision.distance < minSpacing * 0.5 ? 'danger' : 'warning';
+                        const badgeX = (activeBox.left + activeBox.width / 2 + targetBox.left + targetBox.width / 2) / 2;
+                        const badgeY = (activeBox.top + activeBox.height / 2 + targetBox.top + targetBox.height / 2) / 2;
+
+                        this.distanceBadges.push({
+                            x: badgeX,
+                            y: badgeY,
+                            text: collision.collides ? '!' : Math.round(collision.distance).toString(),
+                            axis: Math.abs(collision.direction === 'left' || collision.direction === 'right' ? 1 : 0) ? 'x' : 'y',
+                            zone: collision.collides ? 'lock' : collision.distance < minSpacing * 0.5 ? 'near' : 'far',
+                        });
+                    }
+                }
+            }
         }
 
         // --- Prevent Off-Canvas ---

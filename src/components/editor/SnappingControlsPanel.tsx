@@ -249,18 +249,21 @@ export function SnappingControlsPanel() {
                 />
             </Section>
 
-            {/* Magnetic Strength */}
-            <Section title="Magnetic Strength" icon={<Ruler size={16} />} defaultOpen={false}>
+            {/* Magnetic Strength (SIMPLIFIED) */}
+            <Section title="Magnetic Snapping" icon={<Ruler size={16} />} defaultOpen={true}>
                 <Slider
-                    label="Snap Sensitivity"
-                    value={store.snapSensitivity}
-                    min={3}
-                    max={20}
-                    onChange={store.setSnapSensitivity}
+                    label="Snap Distance"
+                    value={store.magneticSnapThreshold}
+                    min={1}
+                    max={15}
+                    onChange={store.setMagneticSnapThreshold}
                     disabled={!store.magneticSnapping}
                 />
+                <div className="px-3 py-1 text-xs text-gray-500 mb-2">
+                    Auto-snap when within {store.magneticSnapThreshold}px of alignment
+                </div>
                 <div className="px-3 py-2">
-                    <span className="text-sm text-gray-700">Strength</span>
+                    <span className="text-sm text-gray-700">Snap Strength</span>
                     <div className="flex gap-1 mt-1">
                         {(['weak', 'medium', 'strong'] as const).map((strength) => (
                             <button
@@ -277,13 +280,12 @@ export function SnappingControlsPanel() {
                             </button>
                         ))}
                     </div>
+                    <div className="text-xs text-gray-400 mt-1">
+                        {store.magneticStrength === 'strong' && 'Instant snap (recommended)'}
+                        {store.magneticStrength === 'medium' && 'Quick smooth animation'}
+                        {store.magneticStrength === 'weak' && 'Gentle glide to position'}
+                    </div>
                 </div>
-                <Toggle
-                    label="Precision Lock (1px)"
-                    checked={store.precisionLock}
-                    onChange={store.setPrecisionLock}
-                    disabled={!store.magneticSnapping}
-                />
             </Section>
 
             {/* Visual Feedback */}
@@ -318,6 +320,56 @@ export function SnappingControlsPanel() {
                             onChange={(e) => store.setGuideColor(e.target.value)}
                             className="w-8 h-6 rounded border border-gray-200 cursor-pointer"
                         />
+                    </div>
+                </div>
+            </Section>
+
+            {/* Collision & Spacing (NEW) */}
+            <Section title="Collision & Spacing" icon={<Square size={16} />} defaultOpen={true}>
+                <Toggle
+                    label="Prevent Overlap"
+                    checked={store.preventOverlap}
+                    onChange={store.setPreventOverlap}
+                />
+                <Toggle
+                    label="Auto-Push Elements"
+                    checked={store.autoPushElements}
+                    onChange={store.setAutoPushElements}
+                    disabled={!store.preventOverlap}
+                    indent
+                />
+                <Toggle
+                    label="Collision Indicators"
+                    checked={store.collisionIndicators}
+                    onChange={store.setCollisionIndicators}
+                    disabled={!store.preventOverlap}
+                    indent
+                />
+                <Slider
+                    label="Minimum Spacing"
+                    value={store.minimumSpacing}
+                    min={0}
+                    max={50}
+                    onChange={store.setMinimumSpacing}
+                    disabled={!store.preventOverlap}
+                />
+                <div className="px-3 py-2">
+                    <span className="text-sm text-gray-700">Collision Mode</span>
+                    <div className="flex gap-1 mt-1">
+                        {(['block', 'push', 'freeform'] as const).map((mode) => (
+                            <button
+                                key={mode}
+                                onClick={() => store.setCollisionMode(mode)}
+                                disabled={!store.preventOverlap}
+                                className={`flex-1 px-2 py-1 text-xs rounded-md transition-colors capitalize
+                                    ${store.collisionMode === mode
+                                        ? 'bg-pink-500 text-white'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
+                                    ${!store.preventOverlap ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                                {mode}
+                            </button>
+                        ))}
                     </div>
                 </div>
             </Section>

@@ -26,12 +26,20 @@ export interface SnappingSettings {
     snapSensitivity: number;
     magneticStrength: 'weak' | 'medium' | 'strong';
     precisionLock: boolean;
+    magneticSnapThreshold: number; // 3px default - auto-snap when within this distance
 
     // Visual Feedback
     guideAnimations: boolean;
     snapCelebrations: boolean;
     multiLineGuides: boolean;
     guideColor: string;
+
+    // Collision Detection (NEW)
+    preventOverlap: boolean;
+    autoPushElements: boolean;
+    minimumSpacing: number;
+    collisionIndicators: boolean;
+    collisionMode: 'block' | 'push' | 'freeform';
 }
 
 interface SnappingSettingsStore extends SnappingSettings {
@@ -56,11 +64,19 @@ interface SnappingSettingsStore extends SnappingSettings {
     setSnapSensitivity: (value: number) => void;
     setMagneticStrength: (value: 'weak' | 'medium' | 'strong') => void;
     setPrecisionLock: (value: boolean) => void;
+    setMagneticSnapThreshold: (value: number) => void;
 
     setGuideAnimations: (value: boolean) => void;
     setSnapCelebrations: (value: boolean) => void;
     setMultiLineGuides: (value: boolean) => void;
     setGuideColor: (value: string) => void;
+
+    // Collision Detection Actions (NEW)
+    setPreventOverlap: (value: boolean) => void;
+    setAutoPushElements: (value: boolean) => void;
+    setMinimumSpacing: (value: number) => void;
+    setCollisionIndicators: (value: boolean) => void;
+    setCollisionMode: (value: 'block' | 'push' | 'freeform') => void;
 
     // Presets
     applyPreset: (preset: 'beginner' | 'precision' | 'freeform' | 'professional') => void;
@@ -92,12 +108,20 @@ const defaultSettings: SnappingSettings = {
     snapSensitivity: 10,
     magneticStrength: 'medium',
     precisionLock: true,
+    magneticSnapThreshold: 3, // Auto-snap when within 3px
 
     // Visual Feedback
     guideAnimations: true,
     snapCelebrations: true,
     multiLineGuides: false,
     guideColor: '#F63E97',
+
+    // Collision Detection (NEW)
+    preventOverlap: true,
+    autoPushElements: false,
+    minimumSpacing: 10,
+    collisionIndicators: true,
+    collisionMode: 'block',
 };
 
 const presets: Record<string, Partial<SnappingSettings>> = {
@@ -157,6 +181,11 @@ const presets: Record<string, Partial<SnappingSettings>> = {
         precisionLock: true,
         guideAnimations: true,
         snapCelebrations: true,
+        preventOverlap: true,
+        autoPushElements: true,
+        minimumSpacing: 15,
+        collisionIndicators: true,
+        collisionMode: 'push',
     },
 };
 
@@ -189,12 +218,20 @@ export const useSnappingSettingsStore = create<SnappingSettingsStore>()(
             setSnapSensitivity: (value) => set({ snapSensitivity: value }),
             setMagneticStrength: (value) => set({ magneticStrength: value }),
             setPrecisionLock: (value) => set({ precisionLock: value }),
+            setMagneticSnapThreshold: (value) => set({ magneticSnapThreshold: value }),
 
             // Visual Feedback Actions
             setGuideAnimations: (value) => set({ guideAnimations: value }),
             setSnapCelebrations: (value) => set({ snapCelebrations: value }),
             setMultiLineGuides: (value) => set({ multiLineGuides: value }),
             setGuideColor: (value) => set({ guideColor: value }),
+
+            // Collision Detection Actions (NEW)
+            setPreventOverlap: (value) => set({ preventOverlap: value }),
+            setAutoPushElements: (value) => set({ autoPushElements: value }),
+            setMinimumSpacing: (value) => set({ minimumSpacing: value }),
+            setCollisionIndicators: (value) => set({ collisionIndicators: value }),
+            setCollisionMode: (value) => set({ collisionMode: value }),
 
             // Presets
             applyPreset: (preset) => set({ ...defaultSettings, ...presets[preset] }),
