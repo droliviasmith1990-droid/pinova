@@ -511,7 +511,7 @@ export class CanvasManager {
     /**
      * Handle double-click to enable text editing
      */
-    private handleDoubleClick = (event: any): void => {
+    private handleDoubleClick = (event: fabric.TPointerEventInfo<fabric.TPointerEvent>): void => {
         if (!this.canvas) return;
 
         const target = event.target;
@@ -531,7 +531,7 @@ export class CanvasManager {
     /**
      * Handle text editing exit to update store
      */
-    private handleTextEditingExit = (event: any): void => {
+    private handleTextEditingExit = (event: { target: fabric.FabricObject }): void => {
         if (!this.canvas || !this.onElementsChangedCallback) return;
 
         const target = event.target;

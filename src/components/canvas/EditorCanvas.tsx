@@ -63,7 +63,7 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
         const manager = canvasManagerRef.current;
         if (!manager || !isCanvasReady) return;
 
-        const handleScaling = (e: any) => {
+        const handleScaling = (e: fabric.IEvent<MouseEvent>) => {
             setIsResizing(true);
             const target = e.target || e.transform?.target;
             if (target) {
@@ -189,7 +189,7 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
 
         const manager = canvasManagerRef.current;
 
-        const updateBadge = (e: any) => {
+        const updateBadge = (e: fabric.IEvent<MouseEvent>) => {
             const obj = e.target;
             if (!obj) return;
 
@@ -331,7 +331,7 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
         if (!isCanvasReady || !canvasManagerRef.current) return;
         const manager = canvasManagerRef.current;
 
-        const updateToolbarPosition = (e: any) => {
+        const updateToolbarPosition = (e: fabric.IEvent<MouseEvent>) => {
             const obj = e.target;
             if (!obj) return;
             const rect = obj.getBoundingRect(true, true);
