@@ -39,7 +39,6 @@ function ToolButton({ icon: Icon, label, shortcut, isActive, onClick }: ToolButt
                     ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
                     : "text-gray-600 hover:bg-white hover:shadow-md hover:text-gray-900"
             )}
-            title={`${label}${shortcut ? ` (${shortcut})` : ''}`}
         >
             <Icon className="w-5 h-5" strokeWidth={1.5} />
 
