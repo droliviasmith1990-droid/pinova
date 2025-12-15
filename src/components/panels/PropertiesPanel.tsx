@@ -9,7 +9,6 @@ import {
     AlignmentSection,
     PositionSection,
     AppearanceSection,
-    DynamicDataSection,
     TextPropertiesSection,
     ImagePropertiesSection,
     EffectsSection
@@ -43,7 +42,6 @@ export function PropertiesPanel() {
 
     const isText = selectedElement.type === 'text';
     const isImage = selectedElement.type === 'image';
-    const isDynamicCapable = isText || isImage;
 
     return (
         <div className="space-y-6" data-testid="properties-panel">
@@ -58,11 +56,6 @@ export function PropertiesPanel() {
 
             {/* Appearance */}
             <AppearanceSection element={selectedElement} />
-
-            {/* Dynamic Data */}
-            {isDynamicCapable && (
-                <DynamicDataSection element={selectedElement as TextElement | ImageElement} />
-            )}
 
             {/* Text Properties */}
             {isText && (
@@ -81,3 +74,4 @@ export function PropertiesPanel() {
         </div>
     );
 }
+

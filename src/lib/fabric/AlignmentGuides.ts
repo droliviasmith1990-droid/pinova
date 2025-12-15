@@ -85,13 +85,143 @@ export class AlignmentGuides {
         if (!enabled) this.clearLines();
     }
 
-    private onScaling() {
+    private onScaling(e: fabric.BasicTransformEvent<fabric.TPointerEvent> & { target: fabric.FabricObject }) {
         this.isScaling = true;
-        this.clearLines();
+        // Instead of clearing lines, we now show alignment guides during resize too
+        // Call the same alignment logic used for moving
+        this.onObjectScaling(e);
     }
 
     private onModified() {
         this.isScaling = false;
+        this.clearLines();
+    }
+
+    /**
+     * Show alignment guides during scaling/resize operations
+     * Similar to onObjectMoving but works with scaling transforms
+     */
+    private onObjectScaling(e: fabric.BasicTransformEvent<fabric.TPointerEvent> & { target: fabric.FabricObject }) {
+        if (!this.enabled) return;
+        if (!this.settings.magneticSnapping && !this.settings.showGuideLines) return;
+
+        const activeObject = e.target;
+        if (!activeObject) return;
+
+        const canvasObjects = this.canvas.getObjects();
+        const activeRect = activeObject.getBoundingRect();
+
+        this.viewportTransform = this.canvas.viewportTransform;
+        this.zoom = this.canvas.getZoom();
+
+        const canvasWidth = this.canvas.width / this.zoom;
+        const canvasHeight = this.canvas.height / this.zoom;
+
+        this.clearLines();
+
+        // --- Gather Snap Candidates ---
+        interface SnapCandidate {
+            value: number;
+            type: 'edge' | 'center';
+            isBoundary: boolean;
+        }
+
+        const verticalCandidates: SnapCandidate[] = [];
+        const horizontalCandidates: SnapCandidate[] = [];
+
+        // Canvas Boundaries (most important for resize)
+        if (this.settings.snapToBoundaries) {
+            verticalCandidates.push({ value: 0, type: 'edge', isBoundary: true });
+            verticalCandidates.push({ value: canvasWidth, type: 'edge', isBoundary: true });
+            horizontalCandidates.push({ value: 0, type: 'edge', isBoundary: true });
+            horizontalCandidates.push({ value: canvasHeight, type: 'edge', isBoundary: true });
+        }
+
+        // Canvas Center Lines
+        if (this.settings.canvasCenterLines) {
+            const centerX = canvasWidth / 2;
+            const centerY = canvasHeight / 2;
+            verticalCandidates.push({ value: centerX, type: 'center', isBoundary: false });
+            horizontalCandidates.push({ value: centerY, type: 'center', isBoundary: false });
+        }
+
+        // Other Objects
+        if (this.settings.snapToObjects) {
+            for (const obj of canvasObjects) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                if (obj === activeObject || !obj.visible || (obj as any).name?.includes('guide')) continue;
+
+                const objRect = obj.getBoundingRect();
+
+                if (this.settings.objectEdges) {
+                    verticalCandidates.push(
+                        { value: objRect.left, type: 'edge', isBoundary: false },
+                        { value: objRect.left + objRect.width, type: 'edge', isBoundary: false }
+                    );
+                    horizontalCandidates.push(
+                        { value: objRect.top, type: 'edge', isBoundary: false },
+                        { value: objRect.top + objRect.height, type: 'edge', isBoundary: false }
+                    );
+                }
+
+                if (this.settings.objectCenters) {
+                    verticalCandidates.push({ value: objRect.left + objRect.width / 2, type: 'center', isBoundary: false });
+                    horizontalCandidates.push({ value: objRect.top + objRect.height / 2, type: 'center', isBoundary: false });
+                }
+            }
+        }
+
+        // --- Active Object Edge Points (for resize, we care about the edges being resized) ---
+        const activeXPoints = [
+            { value: activeRect.left, type: 'edge' as const },
+            { value: activeRect.left + activeRect.width / 2, type: 'center' as const },
+            { value: activeRect.left + activeRect.width, type: 'edge' as const }
+        ];
+
+        const activeYPoints = [
+            { value: activeRect.top, type: 'edge' as const },
+            { value: activeRect.top + activeRect.height / 2, type: 'center' as const },
+            { value: activeRect.top + activeRect.height, type: 'edge' as const }
+        ];
+
+        // --- Find Best Alignment (show guides without snapping during resize to avoid jumpiness) ---
+        for (const target of verticalCandidates) {
+            for (const source of activeXPoints) {
+                const dist = Math.abs(target.value - source.value);
+                const zone = this.getZone(dist, target.isBoundary);
+
+                if (zone !== 'none') {
+                    this.verticalLines.push({
+                        x: target.value,
+                        y1: -5000,
+                        y2: 5000,
+                        zone,
+                        isBoundary: target.isBoundary
+                    });
+                    break; // Only show one guide per target
+                }
+            }
+        }
+
+        for (const target of horizontalCandidates) {
+            for (const source of activeYPoints) {
+                const dist = Math.abs(target.value - source.value);
+                const zone = this.getZone(dist, target.isBoundary);
+
+                if (zone !== 'none') {
+                    this.horizontalLines.push({
+                        y: target.value,
+                        x1: -5000,
+                        x2: 5000,
+                        zone,
+                        isBoundary: target.isBoundary
+                    });
+                    break; // Only show one guide per target
+                }
+            }
+        }
+
+        this.canvas.requestRenderAll();
     }
 
     private clearLines() {

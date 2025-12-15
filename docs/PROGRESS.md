@@ -598,6 +598,34 @@ Fixed 5 `any` types with proper Fabric.js event types:
 
 ---
 
+### 2025-12-15 (Session 7) 🐛 Bug Fixes + 🎨 Canvas UX Improvements
+
+**✅ Fixed 4 Critical Bugs (Forensic Analysis):**
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| **Selection Sync Mismatch** | `SynchronizationBridge` updated `editorStore` but UI read from `selectionStore` | Updated bridge to sync both stores |
+| **Dimension Badge Static** | Badge used static store values instead of live coords | Now uses `dimensionBadge` state |
+| **Toolbar Positioning Lag** | Toolbar used stale element positions | Added live position tracking via Fabric events |
+| **Layers Panel Buttons** | Not a bug - selection mismatch caused confusion | Fixed by selection sync |
+
+**✅ Implemented 3 Canvas UX Improvements:**
+
+| Feature | Description |
+|---------|-------------|
+| **Ghost Effect** | Elements become 50% transparent during drag/resize |
+| **Hide Toolbar** | Floating toolbar hidden during operations for clean canvas |
+| **Resize Alignment Guides** | Purple magnetic guides now appear during resize (previously only during move) |
+
+**📁 Files Modified:**
+- `src/hooks/useSynchronizationBridge.ts` - Selection sync fix
+- `src/components/canvas/EditorCanvas.tsx` - Ghost effect, toolbar hiding, live position tracking
+- `src/lib/fabric/AlignmentGuides.ts` - Added `onObjectScaling` method for resize guides
+
+**📊 Verification:**
+- ✅ Build compiles successfully
+- ✅ Dev server running
+
 
 ## 🎯 Success Criteria Checklist
 

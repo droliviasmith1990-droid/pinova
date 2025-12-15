@@ -57,38 +57,61 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
     const [toolbarVisible, setToolbarVisible] = useState(false);
     const [toolbarPosition, setToolbarPosition] = useState({ x: 0, y: 0, width: 0 });
     const [isResizing, setIsResizing] = useState(false);
+    const [isDragging, setIsDragging] = useState(false); // Track drag state for ghost effect
 
-    // Bind resizing events
+    // Bind resizing and dragging events for ghost effect
     useEffect(() => {
         const manager = canvasManagerRef.current;
         if (!manager || !isCanvasReady) return;
 
+        // Ghost effect: set opacity to 50% during scaling
         const handleScaling = (e: fabric.IEvent<MouseEvent>) => {
             setIsResizing(true);
-            const target = e.target || e.transform?.target;
+            const target = e.target || (e as any).transform?.target;
             if (target) {
                 activeObjectRef.current = target;
+                // Apply ghost effect
+                target.set({ opacity: 0.5 });
+                (manager as any).canvas?.requestRenderAll();
             }
         };
 
-        const handleScalingEnd = () => {
+        // Ghost effect: set opacity to 50% during moving
+        const handleMoving = (e: fabric.IEvent<MouseEvent>) => {
+            setIsDragging(true);
+            const target = e.target || (e as any).transform?.target;
+            if (target && target.opacity !== 0.5) {
+                target.set({ opacity: 0.5 });
+                (manager as any).canvas?.requestRenderAll();
+            }
+        };
+
+        // Restore opacity when operation ends
+        const handleOperationEnd = (e: fabric.IEvent<MouseEvent>) => {
             setIsResizing(false);
-            // Don't clear activeObjectRef immediately so badge can fade out if needed, 
-            // but for now we follow simple logic
+            setIsDragging(false);
+            const target = e.target || (e as any).transform?.target;
+            if (target) {
+                target.set({ opacity: 1 });
+                (manager as any).canvas?.requestRenderAll();
+            }
         };
 
         const handleSelectionCleared = () => {
             setIsResizing(false);
+            setIsDragging(false);
             activeObjectRef.current = null;
         };
 
         manager.on('object:scaling', handleScaling);
-        manager.on('object:modified', handleScalingEnd);
+        manager.on('object:moving', handleMoving);
+        manager.on('object:modified', handleOperationEnd);
         manager.on('selection:cleared', handleSelectionCleared);
 
         return () => {
             manager.off('object:scaling', handleScaling);
-            manager.off('object:modified', handleScalingEnd);
+            manager.off('object:moving', handleMoving);
+            manager.off('object:modified', handleOperationEnd);
             manager.off('selection:cleared', handleSelectionCleared);
         };
     }, [isCanvasReady]);
@@ -442,8 +465,8 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
                     }}
                 />
 
-                {/* Element Toolbar */}
-                {toolbarVisible && selectedElement && (
+                {/* Element Toolbar - Hidden during drag/resize for clean UX */}
+                {toolbarVisible && selectedElement && !isDragging && !isResizing && (
                     <ElementToolbar
                         x={toolbarPosition.x}
                         y={toolbarPosition.y}

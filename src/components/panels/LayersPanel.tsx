@@ -161,11 +161,33 @@ export function LayersPanel() {
                                                 />
                                             )}
 
-                                            {/* Dynamic indicator */}
-                                            {(element.type === 'text' || element.type === 'image') &&
-                                                (element as TextElement | ImageElement).isDynamic && (
-                                                    <Link2 className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                                )}
+                                            {/* Dynamic Data Toggle - Only for text/image elements */}
+                                            {(element.type === 'text' || element.type === 'image') && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const typedElement = element as TextElement | ImageElement;
+                                                        updateElement(element.id, { isDynamic: !typedElement.isDynamic });
+                                                        saveHistory();
+                                                    }}
+                                                    className={cn(
+                                                        "p-1.5 rounded-md transition-all duration-150 flex-shrink-0",
+                                                        (element as TextElement | ImageElement).isDynamic
+                                                            ? "bg-blue-50 hover:bg-blue-100"
+                                                            : "hover:bg-gray-100"
+                                                    )}
+                                                    title={(element as TextElement | ImageElement).isDynamic
+                                                        ? "Disable dynamic data"
+                                                        : "Enable dynamic data"}
+                                                >
+                                                    <Link2 className={cn(
+                                                        "w-4 h-4",
+                                                        (element as TextElement | ImageElement).isDynamic
+                                                            ? "text-blue-600"
+                                                            : "text-gray-400"
+                                                    )} />
+                                                </button>
+                                            )}
 
                                             {/* Visibility Toggle */}
                                             <button
