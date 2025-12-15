@@ -89,6 +89,7 @@ export function AutoSaveIndicator({
                 className
             )}
             title={errorMessage || `Status: ${status}`}
+            data-testid="autosave-indicator"
         >
             <Icon
                 className={cn(

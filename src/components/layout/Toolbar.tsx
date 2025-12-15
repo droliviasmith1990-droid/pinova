@@ -103,7 +103,7 @@ export function Toolbar({ onOpenFontLibrary }: ToolbarProps) {
     };
 
     return (
-        <div className="h-12 bg-white border-b border-gray-200 flex items-center px-3 gap-1 flex-shrink-0">
+        <div className="h-12 bg-white border-b border-gray-200 flex items-center px-3 gap-1 flex-shrink-0" data-testid="toolbar">
             {/* Add Elements */}
             <IconButton onClick={addText} icon={Type} label="Add Text" withText />
             <IconButton onClick={addImage} icon={Image} label="Add Image" withText />

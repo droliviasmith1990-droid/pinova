@@ -370,6 +370,7 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
         <div
             onContextMenu={handleContextMenu}
             className="editor-canvas-scroll-container"
+            data-testid="editor-canvas"
             style={{
                 position: 'relative',
                 minWidth: '100%',

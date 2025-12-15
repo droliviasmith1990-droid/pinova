@@ -25,7 +25,7 @@ export function PropertiesPanel() {
     // When no element is selected, show Canvas Size controls
     if (!selectedElement) {
         return (
-            <div>
+            <div data-testid="properties-panel">
                 <CanvasSizeSection />
 
                 {/* Placeholder message */}
@@ -46,7 +46,7 @@ export function PropertiesPanel() {
     const isDynamicCapable = isText || isImage;
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6" data-testid="properties-panel">
             {/* Layer Order */}
             <LayerOrderSection element={selectedElement} />
 

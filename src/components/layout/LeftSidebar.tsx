@@ -264,6 +264,7 @@ export function LeftSidebar() {
                     "lg:relative lg:translate-x-0 fixed z-40",
                     isSidebarOpen ? "translate-x-0" : "-translate-x-full"
                 )}
+                data-testid="left-sidebar"
             >
                 {/* ELEMENTS Section */}
                 <div className="p-2">

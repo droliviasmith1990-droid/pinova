@@ -89,7 +89,7 @@ export function LayersPanel() {
     }
 
     return (
-        <div className="space-y-1">
+        <div className="space-y-1" data-testid="layers-panel">
             <DragDropContext onDragEnd={handleDragEnd}>
                 <Droppable droppableId="layers">
                     {(provided) => (
