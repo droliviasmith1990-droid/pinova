@@ -18,6 +18,7 @@ import { parseFieldNameFromLayer } from '@/lib/utils/fieldNameParser';
 // Import specialized stores for cross-store sync
 import { useElementsStore } from './elementsStore';
 import { useSelectionStore } from './selectionStore';
+import { useCanvasStore } from './canvasStore';
 
 interface EditorState {
     // Template
@@ -205,64 +206,22 @@ export const useEditorStore = create(
             },
 
             updateElement: (id, updates) => {
-                set((state) => ({
-                    elements: state.elements.map((el) => {
-                        if (el.id !== id) return el;
+                // Delegate to elementsStore (source of truth)
+                useElementsStore.getState().updateElement(id, updates);
 
-                        // Check if layer name is being updated - auto-detect dynamic field (only for text/image)
-                        const nameUpdates = updates as { name?: string };
-                        if (nameUpdates.name && nameUpdates.name !== el.name && (el.type === 'text' || el.type === 'image')) {
-                            const parsed = parseFieldNameFromLayer(nameUpdates.name, el.type);
-                            if (parsed) {
-                                // Auto-assign dynamic field based on layer name
-                                if (el.type === 'text') {
-                                    return {
-                                        ...el,
-                                        ...updates,
-                                        isDynamic: true,
-                                        dynamicField: parsed.fieldName,
-                                        text: `{{${parsed.fieldName}}}`
-                                    } as TextElement;
-                                } else if (el.type === 'image') {
-                                    return {
-                                        ...el,
-                                        ...updates,
-                                        isDynamic: true,
-                                        dynamicSource: parsed.fieldName
-                                    } as ImageElement;
-                                }
-                            } else {
-                                // Name doesn't match pattern - remove dynamic assignment
-                                if (el.type === 'text') {
-                                    const textEl = el as TextElement;
-                                    return {
-                                        ...el,
-                                        ...updates,
-                                        isDynamic: false,
-                                        dynamicField: undefined,
-                                        text: textEl.text?.startsWith('{{') ? 'Your text here' : textEl.text
-                                    } as TextElement;
-                                } else if (el.type === 'image') {
-                                    return {
-                                        ...el,
-                                        ...updates,
-                                        isDynamic: false,
-                                        dynamicSource: undefined
-                                    } as ImageElement;
-                                }
-                            }
-                        }
-
-                        return { ...el, ...updates } as Element;
-                    })
-                }));
+                // Sync back to editorStore for legacy consumers
+                set({ elements: useElementsStore.getState().elements });
             },
 
             deleteElement: (id) => {
-                set((state) => ({
-                    elements: state.elements.filter((el) => el.id !== id),
-                    selectedIds: state.selectedIds.filter(sid => sid !== id)
-                }));
+                // Delegate to elementsStore (also clears selection via sync)
+                useElementsStore.getState().deleteElement(id);
+
+                // Sync back to editorStore for legacy consumers
+                set({
+                    elements: useElementsStore.getState().elements,
+                    selectedIds: useSelectionStore.getState().selectedIds
+                });
                 get().pushHistory();
             },
 
@@ -312,25 +271,28 @@ export const useEditorStore = create(
             },
 
             selectElement: (id) => {
-                set({ selectedIds: id ? [id] : [] });
+                // Delegate to selectionStore (source of truth)
+                if (id) {
+                    useSelectionStore.getState().selectElement(id);
+                } else {
+                    useSelectionStore.getState().clearSelection();
+                }
+                // Sync back to editorStore for legacy consumers
+                set({ selectedIds: useSelectionStore.getState().selectedIds });
             },
 
             toggleSelection: (id) => {
-                set((state) => {
-                    if (state.selectedIds.includes(id)) {
-                        return { selectedIds: state.selectedIds.filter(sid => sid !== id) };
-                    } else {
-                        return { selectedIds: [...state.selectedIds, id] };
-                    }
-                });
+                // Delegate to selectionStore (source of truth)
+                useSelectionStore.getState().toggleSelection(id);
+                // Sync back to editorStore for legacy consumers
+                set({ selectedIds: useSelectionStore.getState().selectedIds });
             },
 
             lockElement: (id, locked) => {
-                set((state) => ({
-                    elements: state.elements.map((el) =>
-                        el.id === id ? { ...el, locked } : el
-                    )
-                }));
+                // Delegate to elementsStore (source of truth)
+                useElementsStore.getState().lockElement(id, locked);
+                // Sync back to editorStore for legacy consumers
+                set({ elements: useElementsStore.getState().elements });
                 get().pushHistory();
             },
 
@@ -717,19 +679,45 @@ export const useEditorStore = create(
 
             // Template operations
             setTemplateName: (name) => set({ templateName: name }),
-            setBackgroundColor: (color) => set({ backgroundColor: color }),
-            setCanvasSize: (width, height) => set({
-                canvasSize: {
-                    width: Math.max(300, Math.min(5000, width)),
-                    height: Math.max(300, Math.min(5000, height))
-                }
-            }),
-            setElements: (elements) => set({ elements }),
+
+            setBackgroundColor: (color) => {
+                // Delegate to canvasStore (source of truth)
+                useCanvasStore.getState().setBackgroundColor(color);
+                // Sync back to editorStore for legacy consumers
+                set({ backgroundColor: color });
+            },
+
+            setCanvasSize: (width, height) => {
+                // Delegate to canvasStore (source of truth)
+                useCanvasStore.getState().setCanvasSize(width, height);
+                // Sync back to editorStore for legacy consumers
+                set({ canvasSize: useCanvasStore.getState().canvasSize });
+            },
+
+            setElements: (elements) => {
+                // Delegate to elementsStore (source of truth)
+                useElementsStore.getState().setElements(elements);
+                // Sync back to editorStore for legacy consumers
+                set({ elements });
+            },
 
             loadTemplate: (template) => {
                 const canvasSize = template.canvas_size || { width: CANVAS_WIDTH, height: CANVAS_HEIGHT };
                 const backgroundColor = template.background_color || '#FFFFFF';
                 const elements = template.elements || [];
+
+                // === FINDING #5 FIX: Sync to ALL specialized stores ===
+                // 1. Sync elements to elementsStore
+                useElementsStore.getState().setElements(elements);
+
+                // 2. Sync canvas config to canvasStore
+                useCanvasStore.getState().setCanvasSize(canvasSize.width, canvasSize.height);
+                useCanvasStore.getState().setBackgroundColor(backgroundColor);
+
+                // 3. Clear selection in selectionStore
+                useSelectionStore.getState().clearSelection();
+
+                // 4. Update editorStore (legacy consumers + own state)
                 set({
                     templateId: template.id,
                     templateName: template.name,
@@ -748,12 +736,19 @@ export const useEditorStore = create(
             resetToNewTemplate: () => {
                 const canvasSize = { width: CANVAS_WIDTH, height: CANVAS_HEIGHT };
                 const backgroundColor = '#FFFFFF';
+
+                // Sync to specialized stores
+                useElementsStore.getState().clearElements();
+                useSelectionStore.getState().clearSelection();
+                useCanvasStore.getState().setCanvasSize(canvasSize.width, canvasSize.height);
+                useCanvasStore.getState().setBackgroundColor(backgroundColor);
+
+                // Update editorStore
                 set({
                     templateId: generateId(),
                     templateName: 'Untitled Template',
                     canvasSize,
                     backgroundColor,
-
                     templateSource: 'native',
                     elements: [],
                     selectedIds: [],
