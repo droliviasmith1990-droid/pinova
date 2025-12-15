@@ -3,7 +3,10 @@
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Save, Upload, User, LogOut } from 'lucide-react';
-import { useEditorStore } from '@/stores/editorStore';
+import { useTemplateStore } from '@/stores/templateStore';
+import { useCanvasStore } from '@/stores/canvasStore';
+import { useElementsStore } from '@/stores/elementsStore';
+import { useEditorStore } from '@/stores/editorStore'; // Keep for previewMode, loadTemplate
 import { useStageRef } from '@/hooks/useStageRef';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -14,17 +17,24 @@ import { useAuth } from '@/lib/auth/AuthContext';
 import { CanvaImportModal } from '@/components/import/CanvaImportModal';
 
 export function Header() {
-    const templateName = useEditorStore((s) => s.templateName);
-    const setTemplateName = useEditorStore((s) => s.setTemplateName);
+    // Template state from templateStore
+    const templateName = useTemplateStore((s) => s.templateName);
+    const setTemplateName = useTemplateStore((s) => s.setTemplateName);
+    const templateId = useTemplateStore((s) => s.templateId);
+    const isNewTemplate = useTemplateStore((s) => s.isNewTemplate);
+    const isSaving = useTemplateStore((s) => s.isSaving);
+    const setIsSaving = useTemplateStore((s) => s.setIsSaving);
+
+    // Canvas state from canvasStore
+    const backgroundColor = useCanvasStore((s) => s.backgroundColor);
+    const canvasSize = useCanvasStore((s) => s.canvasSize);
+
+    // Elements from elementsStore
+    const elements = useElementsStore((s) => s.elements);
+
+    // Keep some state in editorStore for now (will migrate later)
     const previewMode = useEditorStore((s) => s.previewMode);
     const setPreviewMode = useEditorStore((s) => s.setPreviewMode);
-    const isSaving = useEditorStore((s) => s.isSaving);
-    const setIsSaving = useEditorStore((s) => s.setIsSaving);
-    const elements = useEditorStore((s) => s.elements);
-    const templateId = useEditorStore((s) => s.templateId);
-    const backgroundColor = useEditorStore((s) => s.backgroundColor);
-    const canvasSize = useEditorStore((s) => s.canvasSize);
-    const isNewTemplate = useEditorStore((s) => s.isNewTemplate);
     const loadTemplate = useEditorStore((s) => s.loadTemplate);
 
     const stageRef = useStageRef();

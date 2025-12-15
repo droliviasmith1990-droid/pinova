@@ -65,6 +65,9 @@ describe('Shared Engine (Node Environment)', () => {
         renderAll: jest.Mock;
         backgroundColor: string;
         toDataURL: jest.Mock;
+        getElement: jest.Mock;
+        getObjects: jest.Mock;
+        forEachObject: jest.Mock;
     };
 
     beforeEach(() => {
@@ -78,6 +81,9 @@ describe('Shared Engine (Node Environment)', () => {
             renderAll: jest.fn(),
             backgroundColor: '',
             toDataURL: jest.fn().mockReturnValue('data:image/png;base64,abc123'),
+            getElement: jest.fn().mockReturnValue({}), // Mock canvas element exists
+            getObjects: jest.fn().mockReturnValue([]),  // No existing objects
+            forEachObject: jest.fn(),                   // Iterate over objects
         };
     });
 
@@ -94,7 +100,7 @@ describe('Shared Engine (Node Environment)', () => {
 
             expect(mockCanvas.setDimensions).toHaveBeenCalledWith({ width: 1000, height: 1500 });
             expect(mockCanvas.backgroundColor).toBe('#ffffff');
-            expect(mockCanvas.clear).toHaveBeenCalled();
+            // Note: clear() is no longer called - engine uses incremental updates
             expect(mockCanvas.renderAll).toHaveBeenCalled();
         });
 

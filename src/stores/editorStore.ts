@@ -15,6 +15,9 @@ import {
 } from '@/types/editor';
 import { generateId } from '@/lib/utils';
 import { parseFieldNameFromLayer } from '@/lib/utils/fieldNameParser';
+// Import specialized stores for cross-store sync
+import { useElementsStore } from './elementsStore';
+import { useSelectionStore } from './selectionStore';
 
 interface EditorState {
     // Template
@@ -187,12 +190,18 @@ export const useEditorStore = create(
             templates: [],
             _hasHydrated: false,
 
-            // Element operations
+            // Element operations - specialized stores are source of truth
             addElement: (element) => {
-                set((state) => ({
-                    elements: [...state.elements, element],
+                // Add to specialized stores first (source of truth)
+                useElementsStore.getState().addElement(element);
+                useSelectionStore.getState().selectElement(element.id);
+
+                // Sync editorStore.elements from elementsStore (keeps legacy consumers working)
+                const elements = useElementsStore.getState().elements;
+                set({
+                    elements: elements,
                     selectedIds: [element.id]
-                }));
+                });
             },
 
             updateElement: (id, updates) => {
@@ -658,13 +667,23 @@ export const useEditorStore = create(
                 if (canUndo()) {
                     const newIndex = historyIndex - 1;
                     const snapshot = history[newIndex];
+                    const restoredElements = cloneDeep(snapshot.elements);
+
+                    // Update editorStore state
                     set({
-                        elements: cloneDeep(snapshot.elements),
+                        elements: restoredElements,
                         canvasSize: { ...snapshot.canvasSize },
                         backgroundColor: snapshot.backgroundColor,
                         historyIndex: newIndex,
                         selectedIds: []
                     });
+
+                    // Sync to specialized stores
+                    useElementsStore.getState().setElements(cloneDeep(snapshot.elements));
+                    useSelectionStore.getState().clearSelection();
+                    const canvasStore = require('./canvasStore').useCanvasStore.getState();
+                    canvasStore.setCanvasSize(snapshot.canvasSize.width, snapshot.canvasSize.height);
+                    canvasStore.setBackgroundColor(snapshot.backgroundColor);
                 }
             },
 
@@ -673,13 +692,23 @@ export const useEditorStore = create(
                 if (canRedo()) {
                     const newIndex = historyIndex + 1;
                     const snapshot = history[newIndex];
+                    const restoredElements = cloneDeep(snapshot.elements);
+
+                    // Update editorStore state
                     set({
-                        elements: cloneDeep(snapshot.elements),
+                        elements: restoredElements,
                         canvasSize: { ...snapshot.canvasSize },
                         backgroundColor: snapshot.backgroundColor,
                         historyIndex: newIndex,
                         selectedIds: []
                     });
+
+                    // Sync to specialized stores
+                    useElementsStore.getState().setElements(cloneDeep(snapshot.elements));
+                    useSelectionStore.getState().clearSelection();
+                    const canvasStore = require('./canvasStore').useCanvasStore.getState();
+                    canvasStore.setCanvasSize(snapshot.canvasSize.width, snapshot.canvasSize.height);
+                    canvasStore.setBackgroundColor(snapshot.backgroundColor);
                 }
             },
 

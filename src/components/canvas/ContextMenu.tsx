@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useEditorStore } from '@/stores/editorStore';
+import { useSelectionStore } from '@/stores/selectionStore';
+import { useElementsStore } from '@/stores/elementsStore';
+import { useEditorStore } from '@/stores/editorStore'; // Keep for layer/alignment operations
 import {
     Copy, Palette, ClipboardPaste, CopyPlus, Trash2,
     Lock, Unlock, Layers,
@@ -59,15 +61,24 @@ export function ContextMenu({ x, y, isOpen, onClose }: ContextMenuProps) {
     const menuRef = useRef<HTMLDivElement>(null);
     const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
 
+    // Selection from selectionStore
+    const selectedIds = useSelectionStore((s) => s.selectedIds);
+    const selectedId = selectedIds[0] || null;
+
+    // Elements from elementsStore
+    const elements = useElementsStore((s) => s.elements);
+    const deleteElement = useElementsStore((s) => s.deleteElement);
+    const duplicateElement = useElementsStore((s) => s.duplicateElement);
+    const lockElement = useElementsStore((s) => s.lockElement);
+
+    // Keep clipboard, layer, and alignment in editorStore for now
     const {
-        selectedIds, elements, clipboard, styleClipboard,
-        copyElement, pasteElement, duplicateElement, deleteElement,
-        copyStyle, pasteStyle, lockElement,
+        clipboard, styleClipboard,
+        copyElement, pasteElement, copyStyle, pasteStyle,
         moveElementForward, moveElementBackward, moveElementToFront, moveElementToBack,
         alignElement
     } = useEditorStore();
 
-    const selectedId = selectedIds[0] || null;
     const selectedElement = selectedId ? elements.find(el => el.id === selectedId) : null;
     const isLocked = selectedElement?.locked;
     const hasSelection = !!selectedElement;

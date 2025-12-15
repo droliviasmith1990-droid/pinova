@@ -18,7 +18,8 @@ import {
     Copy,
     Edit2
 } from 'lucide-react';
-import { useEditorStore } from '@/stores/editorStore';
+import { useTemplateStore } from '@/stores/templateStore';
+import { useEditorStore } from '@/stores/editorStore'; // Keep for loadTemplate, element creation
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -72,10 +73,14 @@ function ElementButton({
 }
 
 export function LeftSidebar() {
-    const templateId = useEditorStore((s) => s.templateId);
+    // Template state from templateStore
+    const templateId = useTemplateStore((s) => s.templateId);
+    const storeTemplates = useTemplateStore((s) => s.templates);
+    const setTemplates = useTemplateStore((s) => s.setTemplates);
+    const resetTemplate = useTemplateStore((s) => s.resetTemplate);
+
+    // Keep editorStore for complex actions (loadTemplate, element creation)
     const loadTemplate = useEditorStore((s) => s.loadTemplate);
-    const setTemplates = useEditorStore((s) => s.setTemplates);
-    const storeTemplates = useEditorStore((s) => s.templates);
     const resetToNewTemplate = useEditorStore((s) => s.resetToNewTemplate);
     const addText = useEditorStore((s) => s.addText);
     const addImage = useEditorStore((s) => s.addImage);

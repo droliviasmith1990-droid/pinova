@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { ErrorBoundary } from 'react-error-boundary';
 import { Header } from '@/components/layout/Header';
 import { LeftSidebar } from '@/components/layout/LeftSidebar';
 import { Toolbar } from '@/components/layout/Toolbar';
@@ -12,9 +13,21 @@ import { KeyboardShortcutsModal, useKeyboardShortcutsModal } from '@/components/
 import { DesktopOnlyMessage, useIsMobile } from '@/components/ui/DesktopOnlyMessage';
 import { CanvasErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ToastContainer } from '@/components/ui/ToastContainer';
+import { ErrorFallback, PanelErrorFallback } from '@/components/errors';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Loader2 } from 'lucide-react';
+
+/**
+ * Log errors to console (and future: error tracking service)
+ */
+function logError(error: Error, info: { componentStack?: string | null }) {
+    console.error('[EditorPage] Error caught by boundary:', error);
+    if (info.componentStack) {
+        console.error('[EditorPage] Component stack:', info.componentStack);
+    }
+    // Future: Send to Sentry, LogRocket, etc.
+}
 
 export default function EditorPage() {
     const router = useRouter();
@@ -60,42 +73,49 @@ export default function EditorPage() {
     }
 
     return (
-        <div className="h-screen flex flex-col overflow-hidden bg-gray-100">
-            {/* Header */}
-            <Header />
+        <ErrorBoundary FallbackComponent={ErrorFallback} onError={logError}>
+            <div className="h-screen flex flex-col overflow-hidden bg-gray-100">
+                {/* Header */}
+                <Header />
 
-            {/* Main Content */}
-            <div className="flex-1 flex overflow-hidden">
-                {/* Left Sidebar */}
-                <div className="relative">
-                    <LeftSidebar />
-                    {/* Font Library Panel - slides over left sidebar */}
-                    <FontLibraryPanel
-                        isOpen={isFontLibraryOpen}
-                        onClose={() => setFontLibraryOpen(false)}
-                    />
+                {/* Main Content */}
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Left Sidebar - Wrapped for isolation */}
+                    <ErrorBoundary FallbackComponent={PanelErrorFallback} onError={logError}>
+                        <div className="relative">
+                            <LeftSidebar />
+                            {/* Font Library Panel - slides over left sidebar */}
+                            <FontLibraryPanel
+                                isOpen={isFontLibraryOpen}
+                                onClose={() => setFontLibraryOpen(false)}
+                            />
+                        </div>
+                    </ErrorBoundary>
+
+                    {/* Center Area */}
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        {/* Toolbar with font library toggle */}
+                        <Toolbar onOpenFontLibrary={() => setFontLibraryOpen(true)} />
+
+                        {/* Canvas - Wrapped with Error Boundary */}
+                        <CanvasErrorBoundary>
+                            <CanvasArea />
+                        </CanvasErrorBoundary>
+                    </div>
+
+                    {/* Right Panel - Wrapped for isolation */}
+                    <ErrorBoundary FallbackComponent={PanelErrorFallback} onError={logError}>
+                        <RightPanel />
+                    </ErrorBoundary>
                 </div>
 
-                {/* Center Area */}
-                <div className="flex-1 flex flex-col overflow-hidden">
-                    {/* Toolbar with font library toggle */}
-                    <Toolbar onOpenFontLibrary={() => setFontLibraryOpen(true)} />
+                {/* Keyboard Shortcuts Modal */}
+                <KeyboardShortcutsModal isOpen={isShortcutsOpen} onClose={closeShortcuts} />
 
-                    {/* Canvas - Wrapped with Error Boundary */}
-                    <CanvasErrorBoundary>
-                        <CanvasArea />
-                    </CanvasErrorBoundary>
-                </div>
-
-                {/* Right Panel */}
-                <RightPanel />
+                {/* Toast Notifications */}
+                <ToastContainer />
             </div>
-
-            {/* Keyboard Shortcuts Modal */}
-            <KeyboardShortcutsModal isOpen={isShortcutsOpen} onClose={closeShortcuts} />
-
-            {/* Toast Notifications */}
-            <ToastContainer />
-        </div>
+        </ErrorBoundary>
     );
 }
+

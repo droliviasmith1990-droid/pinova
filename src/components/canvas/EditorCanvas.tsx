@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
-import { useEditorStore } from '@/stores/editorStore';
+import { useCanvasStore } from '@/stores/canvasStore';
+import { useElementsStore } from '@/stores/elementsStore';
+import { useSelectionStore } from '@/stores/selectionStore';
+import { useEditorStore } from '@/stores/editorStore'; // Keep for duplicate/delete coordination
 import { useSnappingSettingsStore } from '@/stores/snappingSettingsStore';
 import { Element } from '@/types/editor';
 import { CanvasManager, CanvasConfig } from '@/lib/canvas/CanvasManager';
@@ -89,17 +92,19 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
         };
     }, [isCanvasReady]);
 
-    // Zustand store
-    const {
-        canvasSize,
-        backgroundColor,
-        zoom,
-        elements,
-        selectedIds,
-        duplicateElement,
-        deleteElement,
-        updateElement,
-    } = useEditorStore();
+    // Canvas state from canvasStore
+    const canvasSize = useCanvasStore((s) => s.canvasSize);
+    const backgroundColor = useCanvasStore((s) => s.backgroundColor);
+    const zoom = useCanvasStore((s) => s.zoom);
+
+    // Elements from elementsStore
+    const elements = useElementsStore((s) => s.elements);
+    const updateElement = useElementsStore((s) => s.updateElement);
+    const deleteElement = useElementsStore((s) => s.deleteElement);
+    const duplicateElement = useElementsStore((s) => s.duplicateElement);
+
+    // Selection from selectionStore
+    const selectedIds = useSelectionStore((s) => s.selectedIds);
 
     // DEBUG: Trace dimensions
     useEffect(() => {

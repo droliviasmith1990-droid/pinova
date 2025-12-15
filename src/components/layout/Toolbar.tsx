@@ -22,7 +22,10 @@ import {
     Minus,
     ArrowRight
 } from 'lucide-react';
-import { useEditorStore } from '@/stores/editorStore';
+import { useSelectionStore } from '@/stores/selectionStore';
+import { useElementsStore } from '@/stores/elementsStore';
+import { useCanvasStore } from '@/stores/canvasStore';
+import { useEditorStore } from '@/stores/editorStore'; // For element creation, undo/redo, history
 import { cn } from '@/lib/utils';
 import { TextElement as TextElementType } from '@/types/editor';
 import { FontPicker } from '@/components/panels/FontPicker';
@@ -35,28 +38,36 @@ interface ToolbarProps {
 }
 
 export function Toolbar({ onOpenFontLibrary }: ToolbarProps) {
+    // Element creation from editorStore (complex with history)
     const addText = useEditorStore((s) => s.addText);
     const addImage = useEditorStore((s) => s.addImage);
     const addShape = useEditorStore((s) => s.addShape);
     const [showShapeMenu, setShowShapeMenu] = React.useState(false);
-    const selectedIds = useEditorStore((s) => s.selectedIds);
+
+    // Selection from selectionStore
+    const selectedIds = useSelectionStore((s) => s.selectedIds);
     const selectedId = selectedIds[0] || null;
-    const elements = useEditorStore((s) => s.elements);
-    const updateElement = useEditorStore((s) => s.updateElement);
+
+    // Elements from elementsStore
+    const elements = useElementsStore((s) => s.elements);
+    const updateElement = useElementsStore((s) => s.updateElement);
+
+    // History - use editorStore for both state AND actions (they must match!)
+    const canUndo = useEditorStore((s) => s.canUndo());
+    const canRedo = useEditorStore((s) => s.canRedo());
     const undo = useEditorStore((s) => s.undo);
     const redo = useEditorStore((s) => s.redo);
-    // Subscribe to history state directly for reactivity
-    const historyIndex = useEditorStore((s) => s.historyIndex);
-    const historyLength = useEditorStore((s) => s.history.length);
-    const canUndo = historyIndex > 0;
-    const canRedo = historyIndex < historyLength - 1;
-    const zoom = useEditorStore((s) => s.zoom);
-    const setZoom = useEditorStore((s) => s.setZoom);
+    const pushHistory = useEditorStore((s) => s.pushHistory);
+
+    // Canvas from canvasStore
+    const zoom = useCanvasStore((s) => s.zoom);
+    const setZoom = useCanvasStore((s) => s.setZoom);
+    const canvasSize = useCanvasStore((s) => s.canvasSize);
+    const zoomToFit = useCanvasStore((s) => s.zoomToFit);
+
+    // Keep snap settings in editorStore for now
     const snapToGrid = useEditorStore((s) => s.snapToGrid);
     const setSnapToGrid = useEditorStore((s) => s.setSnapToGrid);
-    const pushHistory = useEditorStore((s) => s.pushHistory);
-    const zoomToFit = useEditorStore((s) => s.zoomToFit);
-    const canvasSize = useEditorStore((s) => s.canvasSize);
 
     const selectedElement = elements.find((el) => el.id === selectedId);
     const isTextSelected = selectedElement?.type === 'text';

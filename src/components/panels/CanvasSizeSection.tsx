@@ -1,16 +1,24 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useEditorStore } from '@/stores/editorStore';
+import { useCanvasStore } from '@/stores/canvasStore';
+import { useElementsStore } from '@/stores/elementsStore';
+import { useHistoryStore } from '@/stores/historyStore';
 import { cn } from '@/lib/utils';
 
 export function CanvasSizeSection() {
-    const canvasSize = useEditorStore((s) => s.canvasSize);
-    const setCanvasSize = useEditorStore((s) => s.setCanvasSize);
-    const setZoom = useEditorStore((s) => s.setZoom);
-    const elements = useEditorStore((s) => s.elements);
-    const setElements = useEditorStore((s) => s.setElements);
-    const pushHistory = useEditorStore((s) => s.pushHistory);
+    // Canvas state from canvasStore
+    const canvasSize = useCanvasStore((s) => s.canvasSize);
+    const setCanvasSize = useCanvasStore((s) => s.setCanvasSize);
+    const setZoom = useCanvasStore((s) => s.setZoom);
+    const backgroundColor = useCanvasStore((s) => s.backgroundColor);
+
+    // Elements from elementsStore
+    const elements = useElementsStore((s) => s.elements);
+    const clearElements = useElementsStore((s) => s.clearElements);
+
+    // History from historyStore
+    const pushSnapshot = useHistoryStore((s) => s.pushSnapshot);
 
     const [width, setWidth] = useState(canvasSize.width.toString());
     const [height, setHeight] = useState(canvasSize.height.toString());
@@ -63,7 +71,7 @@ export function CanvasSizeSection() {
 
         // Clear elements if any exist
         if (elements.length > 0) {
-            setElements([]);
+            clearElements();
         }
 
         // Apply new canvas size
@@ -77,7 +85,12 @@ export function CanvasSizeSection() {
         const fitZoom = calculateFitZoom(newWidth, newHeight, viewportWidth, viewportHeight);
         setZoom(fitZoom);
 
-        pushHistory();
+        // Push history snapshot
+        pushSnapshot({
+            elements: [], // Elements were just cleared
+            canvasSize: { width: newWidth, height: newHeight },
+            backgroundColor,
+        });
         setShowConfirmDialog(false);
     };
 

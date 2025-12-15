@@ -20,23 +20,45 @@ import {
     Trash2,
     Copy
 } from 'lucide-react';
-import { useEditorStore } from '@/stores/editorStore';
+import { useElementsStore } from '@/stores/elementsStore';
+import { useSelectionStore } from '@/stores/selectionStore';
+import { useHistoryStore } from '@/stores/historyStore';
+import { useCanvasStore } from '@/stores/canvasStore';
+import { useEditorStore } from '@/stores/editorStore'; // Keep for reorderElements
 import { ImageElement, TextElement } from '@/types/editor';
 import { cn } from '@/lib/utils';
 
 export function LayersPanel() {
-    const elements = useEditorStore((s) => s.elements);
-    const selectedIds = useEditorStore((s) => s.selectedIds);
+    // Elements from elementsStore
+    const elements = useElementsStore((s) => s.elements);
+    const updateElement = useElementsStore((s) => s.updateElement);
+    const deleteElement = useElementsStore((s) => s.deleteElement);
+    const duplicateElement = useElementsStore((s) => s.duplicateElement);
+
+    // Selection from selectionStore
+    const selectedIds = useSelectionStore((s) => s.selectedIds);
+    const selectElement = useSelectionStore((s) => s.selectElement);
     const selectedId = selectedIds[0] || null;
-    const selectElement = useEditorStore((s) => s.selectElement);
-    const updateElement = useEditorStore((s) => s.updateElement);
-    const deleteElement = useEditorStore((s) => s.deleteElement);
-    const duplicateElement = useEditorStore((s) => s.duplicateElement);
+
+    // History from historyStore
+    const pushSnapshot = useHistoryStore((s) => s.pushSnapshot);
+    const backgroundColor = useCanvasStore((s) => s.backgroundColor);
+    const canvasSize = useCanvasStore((s) => s.canvasSize);
+
+    // Keep reorderElements from editorStore for now (complex integration)
     const reorderElements = useEditorStore((s) => s.reorderElements);
-    const pushHistory = useEditorStore((s) => s.pushHistory);
 
     // Sort by zIndex descending (top to bottom = front to back)
     const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+
+    // Helper to save current state to history
+    const saveHistory = () => {
+        pushSnapshot({
+            elements,
+            canvasSize,
+            backgroundColor,
+        });
+    };
 
     // Check if we have any content
     const hasContent = elements.length > 0;
@@ -53,7 +75,7 @@ export function LayersPanel() {
 
         if (fromIndex !== toIndex) {
             reorderElements(fromIndex, toIndex);
-            pushHistory();
+            saveHistory();
         }
     };
 
@@ -135,7 +157,7 @@ export function LayersPanel() {
                                                     onChange={(e) => {
                                                         updateElement(element.id, { name: e.target.value });
                                                     }}
-                                                    onBlur={() => pushHistory()}
+                                                    onBlur={() => saveHistory()}
                                                     onClick={(e) => e.stopPropagation()}
                                                     className={cn(
                                                         "flex-1 text-sm font-medium text-gray-700 bg-transparent border-none focus:outline-none min-w-0",
@@ -155,7 +177,7 @@ export function LayersPanel() {
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     updateElement(element.id, { visible: !element.visible });
-                                                    pushHistory();
+                                                    saveHistory();
                                                 }}
                                                 className="p-1.5 hover:bg-gray-100 rounded-md transition-all duration-150 flex-shrink-0"
                                                 title={element.visible ? "Hide layer" : "Show layer"}
@@ -172,7 +194,7 @@ export function LayersPanel() {
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     updateElement(element.id, { locked: !element.locked });
-                                                    pushHistory();
+                                                    saveHistory();
                                                 }}
                                                 className="p-1.5 hover:bg-gray-100 rounded-md transition-all duration-150 flex-shrink-0"
                                                 title={element.locked ? "Unlock layer" : "Lock layer"}
