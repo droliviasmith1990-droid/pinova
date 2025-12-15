@@ -104,54 +104,6 @@ export function Toolbar({ onOpenFontLibrary }: ToolbarProps) {
 
     return (
         <div className="h-12 bg-white border-b border-gray-200 flex items-center px-3 gap-1 flex-shrink-0" data-testid="toolbar">
-            {/* Add Elements */}
-            <IconButton onClick={addText} icon={Type} label="Add Text" withText />
-            <IconButton onClick={addImage} icon={Image} label="Add Image" withText />
-
-            {/* Shapes Dropdown */}
-            <div className="relative">
-                <button
-                    onClick={() => setShowShapeMenu(!showShapeMenu)}
-                    className="flex items-center gap-1 h-8 px-2 border border-gray-300 rounded text-xs hover:bg-gray-50"
-                >
-                    <Square className="w-4 h-4" />
-                    <span className="hidden sm:inline">Shapes</span>
-                </button>
-                {showShapeMenu && (
-                    <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-50 grid grid-cols-2 gap-1 min-w-[120px]">
-                        <button
-                            onClick={() => { addShape('rect'); setShowShapeMenu(false); }}
-                            className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 rounded"
-                        >
-                            <Square className="w-4 h-4" />
-                            Rect
-                        </button>
-                        <button
-                            onClick={() => { addShape('circle'); setShowShapeMenu(false); }}
-                            className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 rounded"
-                        >
-                            <Circle className="w-4 h-4" />
-                            Circle
-                        </button>
-                        <button
-                            onClick={() => { addShape('line'); setShowShapeMenu(false); }}
-                            className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 rounded"
-                        >
-                            <Minus className="w-4 h-4" />
-                            Line
-                        </button>
-                        <button
-                            onClick={() => { addShape('arrow'); setShowShapeMenu(false); }}
-                            className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 rounded"
-                        >
-                            <ArrowRight className="w-4 h-4" />
-                            Arrow
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            <Separator />
 
             {/* Text Tools - only when text selected */}
             {isTextSelected && textElement && (
