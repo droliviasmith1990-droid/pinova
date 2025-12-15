@@ -15,6 +15,8 @@ import { generateThumbnail, uploadThumbnail } from '@/lib/canvasUtils';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { CanvaImportModal } from '@/components/import/CanvaImportModal';
+import { useAutoSave } from '@/hooks/useAutoSave';
+import { AutoSaveIndicator } from '@/components/ui/AutoSaveIndicator';
 
 export function Header() {
     // Template state from templateStore
@@ -47,6 +49,12 @@ export function Header() {
     const [isCanvaImportOpen, setIsCanvaImportOpen] = useState(false);
     const [nameError, setNameError] = useState(false);
     const nameInputRef = useRef<HTMLInputElement>(null);
+
+    // Auto-save hook (Finding #4)
+    const autoSave = useAutoSave({
+        debounceMs: 30000, // 30 seconds after last change
+        enabled: true,
+    });
 
     const handleSave = async () => {
         if (!templateName.trim() || templateName === 'Untitled Template') {
@@ -210,6 +218,14 @@ export function Header() {
                     </div>
                     <span className="text-sm text-gray-700">Preview</span>
                 </label>
+
+                {/* Auto-save indicator */}
+                <AutoSaveIndicator
+                    status={autoSave.status}
+                    lastSavedAt={autoSave.lastSavedAt}
+                    isDirty={autoSave.isDirty}
+                    errorMessage={autoSave.errorMessage}
+                />
 
                 {/* Spacer */}
                 <div className="flex-1" />
