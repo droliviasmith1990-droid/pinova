@@ -173,7 +173,22 @@ async function createFabricObject(
         if (shapeEl.shapeType === 'rect') fabricObject = new fabric.Rect({ ...commonOptions, width: shapeEl.width, height: shapeEl.height, fill: shapeEl.fill, stroke: shapeEl.stroke, strokeWidth: shapeEl.strokeWidth, rx: shapeEl.cornerRadius, ry: shapeEl.cornerRadius });
         else if (shapeEl.shapeType === 'circle') fabricObject = new fabric.Circle({ ...commonOptions, radius: (shapeEl.width || 0) / 2, fill: shapeEl.fill, stroke: shapeEl.stroke, strokeWidth: shapeEl.strokeWidth });
         else if (shapeEl.shapeType === 'line') fabricObject = new fabric.Line(shapeEl.points as [number, number, number, number] || [0, 0, shapeEl.width, 0], { ...commonOptions, stroke: shapeEl.stroke, strokeWidth: shapeEl.strokeWidth });
-        else if (shapeEl.shapeType === 'path') fabricObject = new fabric.Path(shapeEl.pathData || '', { ...commonOptions, fill: shapeEl.fill, stroke: shapeEl.stroke, strokeWidth: shapeEl.strokeWidth });
+        else if (shapeEl.shapeType === 'path') {
+            // Handle 'none' fill - convert to null for Fabric.js transparency
+            const pathFill = shapeEl.fill === 'none' ? null : (shapeEl.fill || '#000000');
+            const pathStroke = shapeEl.stroke === 'none' ? null : (shapeEl.stroke || null);
+            const pathStrokeWidth = shapeEl.strokeWidth || 0;
+
+            // If no fill AND no stroke, default to black fill so path is visible
+            const finalFill = (!pathFill && !pathStroke) ? '#000000' : pathFill;
+
+            fabricObject = new fabric.Path(shapeEl.pathData || '', {
+                ...commonOptions,
+                fill: finalFill,
+                stroke: pathStroke,
+                strokeWidth: pathStrokeWidth
+            });
+        }
     }
     else if (el.type === 'frame') {
         const frameEl = el as FrameElement;

@@ -16,6 +16,6 @@ export { RichTooltip, Tooltip } from './RichTooltip';
 export { ValidatedInput } from './ValidatedInput';
 
 // Feedback Components
-export { Skeleton, TextSkeleton, ImageSkeleton, TemplateListSkeleton } from './Skeleton';
+export { Skeleton, TemplateSkeleton, TemplateListSkeleton, LayerSkeleton, LayerListSkeleton, CanvasSkeleton } from './Skeleton';
 
 // Other Components (add as needed)

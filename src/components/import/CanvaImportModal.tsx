@@ -191,6 +191,43 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
             else if (node.tagName === 'path') {
                 const d = node.getAttribute('d');
                 if (!d) return;
+
+                // Get fill - handle 'none', gradients, and missing values
+                let fill = node.getAttribute('fill');
+                const stroke = node.getAttribute('stroke');
+                const strokeWidth = parseFloat(node.getAttribute('stroke-width') || '0');
+
+                // Handle gradient references (url(#...)) - fallback to black or use stroke
+                if (fill && fill.startsWith('url(')) {
+                    // Try to extract gradient colors or fallback
+                    fill = '#000000'; // Default for gradients we can't parse
+                }
+
+                // If fill is 'none' and no stroke, make it visible with black fill
+                if (fill === 'none' && (!stroke || stroke === 'none')) {
+                    fill = '#000000';
+                }
+
+                // Default to black if no fill specified
+                if (!fill) {
+                    fill = '#000000';
+                }
+
+                // Compute style from parent if needed (inherit)
+                if (fill === 'inherit') {
+                    // Look up parent chain for fill
+                    let parent = node.parentElement;
+                    while (parent && parent !== doc.documentElement) {
+                        const parentFill = parent.getAttribute('fill');
+                        if (parentFill && parentFill !== 'inherit') {
+                            fill = parentFill;
+                            break;
+                        }
+                        parent = parent.parentElement;
+                    }
+                    if (fill === 'inherit') fill = '#000000';
+                }
+
                 elements.push({
                     id: nanoid(),
                     name: `Path ${elements.length + 1}`,
@@ -205,9 +242,9 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
                     locked: lockBackground,
                     visible: true,
                     zIndex: elements.length,
-                    fill: node.getAttribute('fill') || '#000000',
-                    stroke: node.getAttribute('stroke') || '',
-                    strokeWidth: parseFloat(node.getAttribute('stroke-width') || '0'),
+                    fill: fill,
+                    stroke: stroke === 'none' ? '' : (stroke || ''),
+                    strokeWidth: strokeWidth,
                     pathData: d
                 });
             }
