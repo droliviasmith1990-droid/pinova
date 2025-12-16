@@ -182,8 +182,15 @@ async function createFabricObject(
             // If no fill AND no stroke, default to black fill so path is visible
             const finalFill = (!pathFill && !pathStroke) ? '#000000' : pathFill;
 
+            // CRITICAL: Do NOT set left/top for paths - the path data itself
+            // contains the coordinates. Setting left/top would offset the path.
             fabricObject = new fabric.Path(shapeEl.pathData || '', {
-                ...commonOptions,
+                // Apply only non-positional common options
+                angle: el.rotation || 0,
+                opacity: el.opacity ?? 1,
+                selectable: !el.locked,
+                evented: !el.locked,
+                // Path-specific options
                 fill: finalFill,
                 stroke: pathStroke,
                 strokeWidth: pathStrokeWidth

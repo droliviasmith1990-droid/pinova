@@ -67,13 +67,15 @@ export function createFabricObject(element: Element): fabric.FabricObject | null
                 });
             } else if (shapeEl.shapeType === 'path') {
                 // Handle path shapes (from SVG imports)
+                // CRITICAL: Do NOT set left/top for paths - the path data itself
+                // contains the coordinates. Setting left/top would offset the path
+                // from its intended position.
                 const pathFill = shapeEl.fill === 'none' ? null : (shapeEl.fill || '#000000');
                 const pathStroke = shapeEl.stroke === 'none' ? null : (shapeEl.stroke || null);
                 const finalFill = (!pathFill && !pathStroke) ? '#000000' : pathFill;
 
                 obj = new fabric.Path(shapeEl.pathData || '', {
-                    left: element.x,
-                    top: element.y,
+                    // Don't set left/top - path data has native coordinates
                     fill: finalFill,
                     stroke: pathStroke,
                     strokeWidth: shapeEl.strokeWidth || 0,
