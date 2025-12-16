@@ -389,90 +389,114 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
      */
     const parseSvgWithFabric = async (svgContent: string): Promise<EditorElement[]> => {
         return new Promise((resolve) => {
-            fabric.loadSVGFromString(svgContent).then(({ objects }) => {
+            fabric.loadSVGFromString(svgContent).then(({ objects, options }) => {
                 const elements: EditorElement[] = [];
 
-                // Calculate scaling to fit canvas
-                const svgEl = new DOMParser().parseFromString(svgContent, 'image/svg+xml').documentElement;
-                const viewBox = svgEl.getAttribute('viewBox');
-                let scaleX = 1, scaleY = 1;
-
-                if (viewBox) {
-                    const [, , vbW, vbH] = viewBox.split(/[\s,]+/).map(parseFloat);
-                    scaleX = canvasWidth / vbW;
-                    scaleY = canvasHeight / vbH;
+                if (!objects || objects.length === 0) {
+                    console.log('No objects found in SVG');
+                    resolve([]);
+                    return;
                 }
 
-                // Convert Fabric objects to EditorElements
-                objects.forEach((obj, index) => {
+                // Get SVG dimensions from the parsed options
+                const svgWidth = options?.width || canvasWidth;
+                const svgHeight = options?.height || canvasHeight;
+
+                // Calculate scaling factors
+                const scaleX = canvasWidth / svgWidth;
+                const scaleY = canvasHeight / svgHeight;
+                const scale = Math.min(scaleX, scaleY); // Maintain aspect ratio
+
+                console.log(`SVG dimensions: ${svgWidth}x${svgHeight}, Canvas: ${canvasWidth}x${canvasHeight}, Scale: ${scale}`);
+
+                // Create a group from all objects to get proper positioning
+                const validObjects = objects.filter(obj => obj !== null) as fabric.FabricObject[];
+                const group = new fabric.Group(validObjects, {
+                    left: 0,
+                    top: 0,
+                });
+
+                // Scale the group
+                group.scaleX = scaleX;
+                group.scaleY = scaleY;
+
+                // Ungroup to get individual scaled objects
+                const ungroupedObjects = group.getObjects();
+
+                // Calculate absolute positions for each object
+                ungroupedObjects.forEach((obj, index) => {
                     if (!obj) return;
 
+                    // Get the absolute position of the object within the scaled group
+                    const matrix = obj.calcTransformMatrix();
+                    const point = fabric.util.transformPoint(
+                        new fabric.Point(0, 0),
+                        matrix
+                    );
+
+                    // Apply group scaling to get final position
+                    const finalLeft = (obj.left || 0) * scaleX + (group.width! / 2) * (scaleX - 1) + canvasWidth / 2 - (svgWidth * scaleX) / 2;
+                    const finalTop = (obj.top || 0) * scaleY + (group.height! / 2) * (scaleY - 1) + canvasHeight / 2 - (svgHeight * scaleY) / 2;
+
+                    // Get scaled dimensions
                     const bounds = obj.getBoundingRect();
+                    const scaledWidth = bounds.width * scaleX;
+                    const scaledHeight = bounds.height * scaleY;
 
-                    // Scale positions to match canvas size
-                    const scaledLeft = (obj.left || 0) * scaleX;
-                    const scaledTop = (obj.top || 0) * scaleY;
-                    const scaledWidth = (bounds.width || 100) * scaleX;
-                    const scaledHeight = (bounds.height || 100) * scaleY;
-
+                    // Get the path data if it's a path
+                    let pathData = '';
                     if (obj instanceof fabric.Path) {
-                        // For paths, we need to serialize and scale the path data
-                        const pathObj = obj as fabric.Path;
-
-                        // Create a scaled version of the path
-                        const scaledPath = new fabric.Path(pathObj.path as unknown as string, {
-                            scaleX: scaleX,
-                            scaleY: scaleY,
-                        });
-
-                        // Get the path string
-                        const pathData = scaledPath.path?.map(cmd => {
-                            if (Array.isArray(cmd)) return cmd.join(' ');
-                            return cmd;
-                        }).join(' ') || '';
-
-                        const element: ShapeElement = {
-                            id: nanoid(),
-                            name: `Path ${index + 1}`,
-                            type: 'shape',
-                            shapeType: 'path',
-                            x: scaledLeft,
-                            y: scaledTop,
-                            width: scaledWidth,
-                            height: scaledHeight,
-                            rotation: obj.angle || 0,
-                            opacity: obj.opacity ?? 1,
-                            locked: lockBackground,
-                            visible: true,
-                            zIndex: index,
-                            fill: (obj.fill as string) || '#000000',
-                            stroke: (obj.stroke as string) || '',
-                            strokeWidth: (obj.strokeWidth || 0) * Math.min(scaleX, scaleY),
-                            pathData: pathData,
-                        };
-                        elements.push(element);
-                    } else if (obj instanceof fabric.Rect) {
-                        const element: ShapeElement = {
-                            id: nanoid(),
-                            name: `Rect ${index + 1}`,
-                            type: 'shape',
-                            shapeType: 'rect',
-                            x: scaledLeft,
-                            y: scaledTop,
-                            width: scaledWidth,
-                            height: scaledHeight,
-                            rotation: obj.angle || 0,
-                            opacity: obj.opacity ?? 1,
-                            locked: lockBackground,
-                            visible: true,
-                            zIndex: index,
-                            fill: (obj.fill as string) || '#000000',
-                            stroke: (obj.stroke as string) || '',
-                            strokeWidth: (obj.strokeWidth || 0) * Math.min(scaleX, scaleY),
-                            cornerRadius: 0,
-                        };
-                        elements.push(element);
+                        // Create a copy with scaling applied and get the path string
+                        const pathArray = obj.path;
+                        if (pathArray) {
+                            pathData = pathArray.map(cmd => {
+                                if (Array.isArray(cmd)) {
+                                    // Scale the numeric values in the path command
+                                    const command = String(cmd[0]);
+                                    const scaledParts: string[] = [command];
+                                    for (let i = 1; i < cmd.length; i++) {
+                                        const value = cmd[i];
+                                        if (typeof value === 'number') {
+                                            // Scale X values (odd indices) and Y values (even indices)
+                                            const scaledValue = i % 2 === 1 ? value * scaleX : value * scaleY;
+                                            scaledParts.push(String(scaledValue));
+                                        } else {
+                                            scaledParts.push(String(value));
+                                        }
+                                    }
+                                    return scaledParts.join(' ');
+                                }
+                                return String(cmd);
+                            }).join(' ');
+                        }
                     }
+
+                    // Get fill color - handle special cases
+                    let fillColor = (obj.fill as string) || '#000000';
+                    if (fillColor === 'rgb(0, 0, 0)' || fillColor === 'rgb(0,0,0)') {
+                        fillColor = '#000000';
+                    }
+
+                    const element: ShapeElement = {
+                        id: nanoid(),
+                        name: `Element ${index + 1}`,
+                        type: 'shape',
+                        shapeType: obj instanceof fabric.Path ? 'path' : (obj instanceof fabric.Rect ? 'rect' : 'path'),
+                        x: finalLeft,
+                        y: finalTop,
+                        width: scaledWidth,
+                        height: scaledHeight,
+                        rotation: obj.angle || 0,
+                        opacity: obj.opacity ?? 1,
+                        locked: lockBackground,
+                        visible: true,
+                        zIndex: index,
+                        fill: fillColor,
+                        stroke: (obj.stroke as string) || '',
+                        strokeWidth: (obj.strokeWidth || 0) * scale,
+                        pathData: pathData,
+                    };
+                    elements.push(element);
                 });
 
                 console.log(`Fabric SVG Import: Created ${elements.length} elements`);
@@ -483,6 +507,7 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
             });
         });
     };
+
 
     // Merge similar paths by color and style
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
