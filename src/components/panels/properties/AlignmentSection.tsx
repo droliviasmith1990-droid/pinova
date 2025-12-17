@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import {
     AlignVerticalJustifyStart,
     AlignVerticalJustifyCenter,
@@ -20,7 +20,7 @@ interface AlignmentSectionProps {
     onAction?: () => void;
 }
 
-export function AlignmentSection({ element, selectedIds, onAction }: AlignmentSectionProps) {
+export const AlignmentSection = memo(function AlignmentSection({ element, selectedIds, onAction }: AlignmentSectionProps) {
     const alignElement = useEditorStore((s) => s.alignElement);
     const alignSelectedElements = useEditorStore((s) => s.alignSelectedElements);
     const distributeSelectedElements = useEditorStore((s) => s.distributeSelectedElements);
@@ -166,4 +166,4 @@ export function AlignmentSection({ element, selectedIds, onAction }: AlignmentSe
             )}
         </>
     );
-}
+});

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import {
     ChevronDown,
     ChevronUp,
@@ -16,7 +16,7 @@ interface LayerOrderSectionProps {
     onAction?: () => void;
 }
 
-export function LayerOrderSection({ element, onAction }: LayerOrderSectionProps) {
+export const LayerOrderSection = memo(function LayerOrderSection({ element, onAction }: LayerOrderSectionProps) {
     const moveElementForward = useEditorStore((s) => s.moveElementForward);
     const moveElementBackward = useEditorStore((s) => s.moveElementBackward);
     const moveElementToFront = useEditorStore((s) => s.moveElementToFront);
@@ -77,4 +77,4 @@ export function LayerOrderSection({ element, onAction }: LayerOrderSectionProps)
             </div>
         </div>
     );
-}
+});

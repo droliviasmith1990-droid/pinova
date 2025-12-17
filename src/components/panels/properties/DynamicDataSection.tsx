@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import { Link2, Link2Off } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { TextElement, ImageElement } from '@/types/editor';
@@ -11,7 +11,7 @@ interface DynamicDataSectionProps {
     element: TextElement | ImageElement;
 }
 
-export function DynamicDataSection({ element }: DynamicDataSectionProps) {
+export const DynamicDataSection = memo(function DynamicDataSection({ element }: DynamicDataSectionProps) {
     const updateElement = useEditorStore((s) => s.updateElement);
     const pushHistory = useEditorStore((s) => s.pushHistory);
 
@@ -74,4 +74,4 @@ export function DynamicDataSection({ element }: DynamicDataSectionProps) {
             </div>
         </div>
     );
-}
+});

@@ -1,16 +1,15 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import { useEditorStore } from '@/stores/editorStore';
 import { TextElement } from '@/types/editor';
-import { cn } from '@/lib/utils';
 import { SectionHeader, StyleButton, SliderRow } from './shared';
 
 interface EffectsSectionProps {
     element: TextElement;
 }
 
-export function EffectsSection({ element }: EffectsSectionProps) {
+export const EffectsSection = memo(function EffectsSection({ element }: EffectsSectionProps) {
     const updateElement = useEditorStore((s) => s.updateElement);
     const pushHistory = useEditorStore((s) => s.pushHistory);
 
@@ -239,4 +238,4 @@ export function EffectsSection({ element }: EffectsSectionProps) {
             )}
         </div>
     );
-}
+});

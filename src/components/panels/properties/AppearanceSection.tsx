@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import { useEditorStore } from '@/stores/editorStore';
 import { Element } from '@/types/editor';
 import { SectionHeader } from './shared';
@@ -9,7 +9,7 @@ interface AppearanceSectionProps {
     element: Element;
 }
 
-export function AppearanceSection({ element }: AppearanceSectionProps) {
+export const AppearanceSection = memo(function AppearanceSection({ element }: AppearanceSectionProps) {
     const updateElement = useEditorStore((s) => s.updateElement);
     const pushHistory = useEditorStore((s) => s.pushHistory);
 
@@ -41,4 +41,4 @@ export function AppearanceSection({ element }: AppearanceSectionProps) {
             </div>
         </div>
     );
-}
+});

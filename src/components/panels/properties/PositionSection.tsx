@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import { RotateCw } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { Element } from '@/types/editor';
@@ -10,7 +10,11 @@ interface PositionSectionProps {
     element: Element;
 }
 
-export function PositionSection({ element }: PositionSectionProps) {
+/**
+ * PositionSection - Memoized for performance (Phase 3.1)
+ * Only re-renders when element prop changes
+ */
+export const PositionSection = memo(function PositionSection({ element }: PositionSectionProps) {
     const updateElement = useEditorStore((s) => s.updateElement);
     const pushHistory = useEditorStore((s) => s.pushHistory);
 
@@ -59,4 +63,5 @@ export function PositionSection({ element }: PositionSectionProps) {
             </div>
         </div>
     );
-}
+});
+

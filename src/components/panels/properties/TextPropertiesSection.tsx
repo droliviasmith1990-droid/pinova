@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import { AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { TextElement } from '@/types/editor';
@@ -11,7 +11,7 @@ interface TextPropertiesSectionProps {
     element: TextElement;
 }
 
-export function TextPropertiesSection({ element }: TextPropertiesSectionProps) {
+export const TextPropertiesSection = memo(function TextPropertiesSection({ element }: TextPropertiesSectionProps) {
     const updateElement = useEditorStore((s) => s.updateElement);
     const pushHistory = useEditorStore((s) => s.pushHistory);
 
@@ -115,4 +115,4 @@ export function TextPropertiesSection({ element }: TextPropertiesSectionProps) {
             </div>
         </div>
     );
-}
+});

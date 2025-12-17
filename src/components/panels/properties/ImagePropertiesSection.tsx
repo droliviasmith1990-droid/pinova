@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import { ImageElement } from '@/types/editor';
 import { SectionHeader } from './shared';
 
@@ -9,10 +9,9 @@ interface ImagePropertiesSectionProps {
 }
 
 /**
- * ImagePropertiesSection - Simplified
- * Image URL and Corner Radius removed (handled by Position Panel instead)
+ * ImagePropertiesSection - Memoized for performance (Phase 3.1)
  */
-export function ImagePropertiesSection({ element }: ImagePropertiesSectionProps) {
+export const ImagePropertiesSection = memo(function ImagePropertiesSection({ element }: ImagePropertiesSectionProps) {
     // No image-specific controls needed anymore
     // Position, size, and alignment handled by PositionPanel
     return (
@@ -23,4 +22,4 @@ export function ImagePropertiesSection({ element }: ImagePropertiesSectionProps)
             </p>
         </div>
     );
-}
+});
