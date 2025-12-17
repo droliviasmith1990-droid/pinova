@@ -71,7 +71,7 @@ export const LayerItem = memo(function LayerItem({
 
             {/* Icon */}
             <div
-                className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0"
+                className="w-8 h-8 rounded flex items-center justify-center shrink-0"
                 style={isCanvaBackground
                     ? { background: 'linear-gradient(135deg, #8B3DFF, #00C4CC)' }
                     : { background: '#f3f4f6' }
@@ -123,7 +123,7 @@ export const LayerItem = memo(function LayerItem({
                         onSaveHistory();
                     }}
                     className={cn(
-                        "p-1.5 rounded-md transition-all duration-150 flex-shrink-0",
+                        "p-1.5 rounded-md transition-all duration-150 shrink-0",
                         (element as TextElement | ImageElement).isDynamic
                             ? "bg-blue-50 hover:bg-blue-100"
                             : "hover:bg-gray-100"
@@ -148,7 +148,7 @@ export const LayerItem = memo(function LayerItem({
                     onUpdateElement(element.id, { visible: !element.visible });
                     onSaveHistory();
                 }}
-                className="p-1.5 hover:bg-gray-100 rounded-md transition-all duration-150 flex-shrink-0"
+                className="p-1.5 hover:bg-gray-100 rounded-md transition-all duration-150 shrink-0"
                 title={element.visible ? "Hide layer" : "Show layer"}
             >
                 {element.visible ? (
@@ -165,7 +165,7 @@ export const LayerItem = memo(function LayerItem({
                     onUpdateElement(element.id, { locked: !element.locked });
                     onSaveHistory();
                 }}
-                className="p-1.5 hover:bg-gray-100 rounded-md transition-all duration-150 flex-shrink-0"
+                className="p-1.5 hover:bg-gray-100 rounded-md transition-all duration-150 shrink-0"
                 title={element.locked ? "Unlock layer" : "Lock layer"}
             >
                 {element.locked ? (
@@ -181,7 +181,7 @@ export const LayerItem = memo(function LayerItem({
                     e.stopPropagation();
                     onDuplicateElement(element.id);
                 }}
-                className="p-1.5 hover:bg-gray-100 rounded-md transition-all duration-150 flex-shrink-0"
+                className="p-1.5 hover:bg-gray-100 rounded-md transition-all duration-150 shrink-0"
                 title="Duplicate layer"
             >
                 <Copy className="w-4 h-4 text-gray-400" />
@@ -199,7 +199,7 @@ export const LayerItem = memo(function LayerItem({
                         onDeleteElement(element.id);
                     }
                 }}
-                className="p-1.5 hover:bg-red-50 rounded-md transition-all duration-150 flex-shrink-0 group/delete"
+                className="p-1.5 hover:bg-red-50 rounded-md transition-all duration-150 shrink-0 group/delete"
                 title="Delete layer"
             >
                 <Trash2 className="w-4 h-4 text-gray-400 group-hover/delete:text-red-500" />

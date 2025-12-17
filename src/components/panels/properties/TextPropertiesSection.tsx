@@ -100,7 +100,7 @@ export const TextPropertiesSection = memo(function TextPropertiesSection({ eleme
                 </div>
 
                 {/* Auto-fit Text Toggle */}
-                <label className="flex items-center gap-3 cursor-pointer py-2 px-3 rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200">
+                <label className="flex items-center gap-3 cursor-pointer py-2 px-3 rounded-lg bg-linear-to-r from-blue-50 to-purple-50 border border-blue-200">
                     <input
                         type="checkbox"
                         checked={element.autoFitText || false}
