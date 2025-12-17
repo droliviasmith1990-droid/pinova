@@ -20,6 +20,26 @@ interface ExtendedFabricObject extends fabric.FabricObject {
     _element?: Element;
 }
 
+/**
+ * Apply text transformation (uppercase, lowercase, capitalize)
+ */
+function applyTextTransform(
+    text: string,
+    transform: 'none' | 'uppercase' | 'lowercase' | 'capitalize'
+): string {
+    switch (transform) {
+        case 'uppercase':
+            return text.toUpperCase();
+        case 'lowercase':
+            return text.toLowerCase();
+        case 'capitalize':
+            return text.replace(/\b\w/g, (char) => char.toUpperCase());
+        case 'none':
+        default:
+            return text;
+    }
+}
+
 
 /**
  * Create a Fabric.js object from an Element
@@ -30,12 +50,20 @@ export function createFabricObject(element: Element): fabric.FabricObject | null
     switch (element.type) {
         case 'text': {
             const textEl = element as TextElement;
-            obj = new fabric.Textbox(textEl.text || '', {
+            
+            // Apply text transform if specified
+            let displayText = textEl.text || '';
+            if (textEl.textTransform) {
+                displayText = applyTextTransform(displayText, textEl.textTransform);
+            }
+            
+            obj = new fabric.Textbox(displayText, {
                 left: element.x,
                 top: element.y,
                 width: element.width,
                 fontSize: textEl.fontSize || 16,
                 fontFamily: textEl.fontFamily || 'Arial',
+                fontWeight: textEl.fontWeight || 400,
                 fill: textEl.fill || '#000000',
                 textAlign: textEl.align || 'left',
             });
@@ -213,6 +241,29 @@ export function syncElementToFabric(
         if (currentSelectable === updates.locked) { // locked = !selectable
             fabricObject.set('selectable', !updates.locked);
             fabricObject.set('evented', !updates.locked);
+        }
+    }
+
+    // Text-specific property handling
+    if (fabricObject instanceof fabric.Textbox) {
+        const textUpdates = updates as Partial<TextElement>;
+        
+        // Font weight
+        if (textUpdates.fontWeight !== undefined) {
+            fabricObject.set('fontWeight', textUpdates.fontWeight);
+        }
+        
+        // Font family
+        if (textUpdates.fontFamily !== undefined) {
+            fabricObject.set('fontFamily', textUpdates.fontFamily);
+        }
+        
+        // Text transform - requires re-applying to display text
+        if (textUpdates.textTransform !== undefined || textUpdates.text !== undefined) {
+            const originalText = textUpdates.text ?? fabricObject.text ?? '';
+            const transform = textUpdates.textTransform ?? 'none';
+            const displayText = applyTextTransform(originalText, transform);
+            fabricObject.set('text', displayText);
         }
     }
 

@@ -8,7 +8,8 @@ import {
     AppearanceSection,
     TextPropertiesSection,
     ImagePropertiesSection,
-    EffectsSection
+    EffectsSection,
+    TypographySection,
 } from './properties';
 
 /**
@@ -61,6 +62,11 @@ export function PropertiesPanel() {
             {/* Text Properties */}
             {isText && (
                 <TextPropertiesSection element={selectedElement as TextElement} />
+            )}
+
+            {/* Typography (font family, weight, transform) */}
+            {isText && (
+                <TypographySection element={selectedElement as TextElement} />
             )}
 
             {/* Image Properties */}

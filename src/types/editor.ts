@@ -47,6 +47,14 @@ export interface TextElement extends BaseElement {
     // Dynamic field - now supports any field name (text1, text2, etc.)
     isDynamic: boolean;
     dynamicField?: string;
+    
+    // Typography enhancements (Phase 1)
+    /** Text case transformation */
+    textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
+    /** Font weight (100-900), separate from fontStyle */
+    fontWeight?: 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900;
+    /** Font provider for tracking source */
+    fontProvider?: 'system' | 'google' | 'custom';
 }
 
 export interface ImageElement extends BaseElement {
