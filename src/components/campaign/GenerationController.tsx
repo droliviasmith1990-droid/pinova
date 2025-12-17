@@ -9,11 +9,12 @@ import { Play, Pause, RotateCcw, AlertCircle, CheckCircle, Loader2, RefreshCw, S
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { throttle } from 'lodash';
-import * as fabric from 'fabric';
+// fabric is used within the pool, not directly here
 import { useCampaignGeneration } from '@/stores/generationStore';
 import { renderTemplate, exportToBlob, FieldMapping } from '@/lib/fabric/engine';
 import { Element, CanvasSize } from '@/types/editor';
 import { PinCardData } from './PinCard';
+import { getCanvasPool } from '@/lib/canvas/CanvasPool';
 
 // ============================================
 // Types
@@ -112,7 +113,9 @@ export function GenerationController({
     const shouldPauseRef = useRef(false);
     const isMountedRef = useRef(true);
     const activeUploadsRef = useRef<Set<Promise<void>>>(new Set());
-    const fabricCanvasRef = useRef<fabric.StaticCanvas | null>(null);
+    
+    // Canvas pool for reuse (Phase 2.3 optimization)
+    const canvasPoolRef = useRef(getCanvasPool({ maxSize: 5 }));
 
     // Throttled progress saver
     const throttledSaveProgressRef = useRef(
@@ -148,10 +151,8 @@ export function GenerationController({
         return () => {
             isMountedRef.current = false;
             throttledSaveProgressRef.current.cancel();
-            if (fabricCanvasRef.current) {
-                fabricCanvasRef.current.dispose();
-                fabricCanvasRef.current = null;
-            }
+            // Note: Pool canvases are NOT disposed on unmount
+            // They stay in the global pool for reuse across sessions
         };
     }, []);
 
@@ -162,34 +163,32 @@ export function GenerationController({
         rowData: Record<string, string>,
         rowIndex: number
     ): Promise<{ blob: Blob; fileName: string; rowIndex: number }> => {
-        // Create or reuse canvas
-        if (!fabricCanvasRef.current) {
-            fabricCanvasRef.current = new fabric.StaticCanvas(undefined, {
-                width: canvasSize.width,
-                height: canvasSize.height,
-            });
+        // Acquire canvas from pool (Phase 2.3 optimization)
+        const canvas = canvasPoolRef.current.acquire(canvasSize.width, canvasSize.height);
+
+        try {
+            // Render using shared engine
+            await renderTemplate(
+                canvas,
+                templateElements,
+                { width: canvasSize.width, height: canvasSize.height, backgroundColor },
+                rowData,
+                fieldMapping as FieldMapping
+            );
+
+            // Export to blob
+            const multiplier = QUALITY_MAP[settings.quality];
+            const blob = await exportToBlob(canvas, { multiplier });
+
+            return {
+                blob,
+                fileName: `pin-${rowIndex + 1}.png`,
+                rowIndex,
+            };
+        } finally {
+            // Always release canvas back to pool
+            canvasPoolRef.current.release(canvas);
         }
-
-        const canvas = fabricCanvasRef.current;
-
-        // Render using shared engine
-        await renderTemplate(
-            canvas,
-            templateElements,
-            { width: canvasSize.width, height: canvasSize.height, backgroundColor },
-            rowData,
-            fieldMapping as FieldMapping
-        );
-
-        // Export to blob
-        const multiplier = QUALITY_MAP[settings.quality];
-        const blob = await exportToBlob(canvas, { multiplier });
-
-        return {
-            blob,
-            fileName: `pin-${rowIndex + 1}.png`,
-            rowIndex,
-        };
     }, [canvasSize, templateElements, backgroundColor, fieldMapping, settings.quality]);
 
     // ============================================
@@ -310,6 +309,9 @@ export function GenerationController({
 
         setActiveMode(mode);
         log(`Starting generation in ${mode} mode from index ${startIndex}`);
+
+        // Pre-warm canvas pool for better performance (Phase 2.3)
+        canvasPoolRef.current.prewarm(3, canvasSize.width, canvasSize.height);
 
         const errors: Array<{ rowIndex: number; error: string }> = [];
         let current = startIndex;
@@ -465,11 +467,8 @@ export function GenerationController({
                 setIsPausing(false);
                 setActiveMode(null);
             }
-            // Cleanup canvas
-            if (fabricCanvasRef.current) {
-                fabricCanvasRef.current.dispose();
-                fabricCanvasRef.current = null;
-            }
+            // Log pool stats for performance monitoring
+            log('Canvas pool stats:', canvasPoolRef.current.getStats());
         }
     }, [
         status, templateElements, canvasSize, backgroundColor, csvData,
