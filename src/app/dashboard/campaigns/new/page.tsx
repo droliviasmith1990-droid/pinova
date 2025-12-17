@@ -13,11 +13,12 @@ import {
     FieldMappingSection, 
     FormActions 
 } from './components';
+import { PreviewSection } from '@/components/campaign/PreviewSection';
 
 function SinglePageContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { selectedTemplate, setSelectedTemplate } = useCampaignWizard();
+    const { selectedTemplate, setSelectedTemplate, csvData, fieldMapping } = useCampaignWizard();
     const fieldMappingRef = useRef<HTMLDivElement>(null);
     const hasLoadedFromUrlRef = useRef(false);
 
@@ -119,6 +120,11 @@ function SinglePageContent() {
                             <div ref={fieldMappingRef}>
                                 <FieldMappingSection />
                             </div>
+                        )}
+
+                        {/* Preview Section - Shows after field mapping is configured */}
+                        {selectedTemplate && csvData && Object.keys(fieldMapping).length > 0 && (
+                            <PreviewSection />
                         )}
                     </div>
                 </div>

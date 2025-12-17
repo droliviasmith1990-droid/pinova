@@ -20,6 +20,8 @@ export interface FieldMapping {
     [templateField: string]: string; // templateField -> csvColumn
 }
 
+export type PreviewStatus = 'idle' | 'generating' | 'ready' | 'error';
+
 export interface CampaignWizardState {
     currentStep: WizardStep;
     csvData: CSVData | null;
@@ -27,6 +29,7 @@ export interface CampaignWizardState {
     fieldMapping: FieldMapping;
     campaignName: string;
     campaignDescription: string;
+    previewStatus: PreviewStatus;
 }
 
 export interface CampaignWizardActions {
@@ -42,6 +45,7 @@ export interface CampaignWizardActions {
     updateFieldMapping: (field: string, column: string) => void;
     setCampaignName: (name: string) => void;
     setCampaignDescription: (description: string) => void;
+    setPreviewStatus: (status: PreviewStatus) => void;
     resetWizard: () => void;
     
     // Validation
@@ -62,6 +66,7 @@ const initialState: CampaignWizardState = {
     fieldMapping: {},
     campaignName: '',
     campaignDescription: '',
+    previewStatus: 'idle',
 };
 
 // ============================================
@@ -127,6 +132,10 @@ export function CampaignWizardProvider({ children }: { children: ReactNode }) {
         setState((prev) => ({ ...prev, campaignDescription: description }));
     }, []);
 
+    const setPreviewStatus = useCallback((status: PreviewStatus) => {
+        setState((prev) => ({ ...prev, previewStatus: status }));
+    }, []);
+
     const resetWizard = useCallback(() => {
         setState(initialState);
     }, []);
@@ -185,6 +194,7 @@ export function CampaignWizardProvider({ children }: { children: ReactNode }) {
         updateFieldMapping,
         setCampaignName,
         setCampaignDescription,
+        setPreviewStatus,
         resetWizard,
         canProceed,
         getValidationErrors,

@@ -5,7 +5,7 @@ const DEBUG = process.env.NODE_ENV === 'development';
 const log = (...args: unknown[]) => DEBUG && console.log('[HybridController]', ...args);
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Play, Pause, RotateCcw, AlertCircle, CheckCircle, Loader2, RefreshCw, Server, Monitor } from 'lucide-react';
+import { Play, RotateCcw, RefreshCw, Server, Monitor } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { throttle } from 'lodash';
@@ -15,6 +15,8 @@ import { renderTemplate, exportToBlob, FieldMapping } from '@/lib/fabric/engine'
 import { Element, CanvasSize } from '@/types/editor';
 import { PinCardData } from './PinCard';
 import { getCanvasPool } from '@/lib/canvas/CanvasPool';
+import { EnhancedProgressTracker } from './EnhancedProgressTracker';
+import { calculateProgressMetrics, formatDuration } from '@/hooks/useProgressMetrics';
 
 // ============================================
 // Types
@@ -32,6 +34,19 @@ export interface GenerationProgress {
     percentage: number;
     status: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
     errors: Array<{ rowIndex: number; error: string }>;
+    
+    // Timing metrics for ETA calculation
+    startTime: number | null;
+    elapsedTime: number;
+    pausedDuration: number;
+    
+    // Speed and ETA
+    currentSpeed: number;
+    estimatedTimeRemaining: number;
+    
+    // Current operation
+    currentPinTitle: string;
+    currentPinIndex: number;
 }
 
 // Quality to multiplier mapping
@@ -101,6 +116,14 @@ export function GenerationController({
             percentage: Math.round((actualProgress / csvData.length) * 100),
             status: 'idle',
             errors: [],
+            // Timing fields
+            startTime: null,
+            elapsedTime: 0,
+            pausedDuration: 0,
+            currentSpeed: 0,
+            estimatedTimeRemaining: 0,
+            currentPinTitle: '',
+            currentPinIndex: 0,
         };
     });
     const [isPausing, setIsPausing] = useState(false);
@@ -116,6 +139,11 @@ export function GenerationController({
     
     // Canvas pool for reuse (Phase 2.3 optimization)
     const canvasPoolRef = useRef(getCanvasPool({ maxSize: 5 }));
+    
+    // Timing refs for ETA calculation
+    const startTimeRef = useRef<number | null>(null);
+    const pausedAtRef = useRef<number | null>(null);
+    const totalPausedDurationRef = useRef<number>(0);
 
     // Throttled progress saver
     const throttledSaveProgressRef = useRef(
@@ -302,6 +330,17 @@ export function GenerationController({
         onStatusChange('processing');
         shouldPauseRef.current = false;
 
+        // Initialize or adjust timing for ETA calculation
+        if (startIndex === 0) {
+            // Fresh start - reset all timing
+            startTimeRef.current = Date.now();
+            totalPausedDurationRef.current = 0;
+        } else if (pausedAtRef.current) {
+            // Resuming from pause - add paused duration
+            totalPausedDurationRef.current += Date.now() - pausedAtRef.current;
+            pausedAtRef.current = null;
+        }
+
         // Determine render mode
         // CHANGED: Default to 'client' even in auto mode for reliability
         // Server mode was causing 500 errors on large batches
@@ -425,13 +464,32 @@ export function GenerationController({
 
                 current++;
 
-                // Update progress
+                // Calculate timing metrics for ETA
+                const currentPinTitle = rowData.title || rowData.name || rowData.product_name || `Row ${rowIndex + 1}`;
+                const metrics = calculateProgressMetrics({
+                    completed: current,
+                    total: csvData.length,
+                    startTime: startTimeRef.current,
+                    pausedDuration: totalPausedDurationRef.current,
+                    isPaused: false,
+                    currentTime: Date.now(),
+                });
+
+                // Update progress with timing metrics
                 const newProgress: GenerationProgress = {
                     current,
                     total: csvData.length,
                     percentage: Math.round((current / csvData.length) * 100),
                     status: 'generating',
                     errors,
+                    // Timing metrics
+                    startTime: startTimeRef.current,
+                    elapsedTime: metrics.elapsedTimeMs,
+                    pausedDuration: totalPausedDurationRef.current,
+                    currentSpeed: metrics.pinsPerSecond,
+                    estimatedTimeRemaining: metrics.etaSeconds * 1000,
+                    currentPinTitle,
+                    currentPinIndex: current,
                 };
                 setProgress(newProgress);
                 onProgressUpdate(newProgress);
@@ -444,6 +502,8 @@ export function GenerationController({
 
             // Final status
             if (shouldPauseRef.current) {
+                // Record pause timestamp for duration calculation on resume
+                pausedAtRef.current = Date.now();
                 setStatus('paused');
                 onStatusChange('paused');
                 throttledSaveProgressRef.current.flush();
@@ -508,153 +568,118 @@ export function GenerationController({
             percentage: 0,
             status: 'idle',
             errors: [],
+            startTime: null,
+            elapsedTime: 0,
+            pausedDuration: 0,
+            currentSpeed: 0,
+            estimatedTimeRemaining: 0,
+            currentPinTitle: '',
+            currentPinIndex: 0,
         });
 
         startGeneration(0);
     }, [campaignId, csvData.length, progress.current, startGeneration]);
 
-    // ============================================
-    // Render
-    // ============================================
+    // Map status for tracker component
+    const trackerStatus = status === 'processing' ? 'generating' 
+        : status === 'failed' ? 'error' 
+        : status === 'completed' ? 'completed'
+        : status === 'paused' ? 'paused'
+        : 'idle';
+
     return (
         <div className="space-y-4">
-            {/* Progress Bar */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                    <div>
-                        <h3 className="font-semibold text-gray-900">
-                            {status === 'completed' ? 'Generation Complete' :
-                                status === 'paused' ? 'Generation Paused' :
-                                    status === 'processing' ? 'Generating Pins...' :
-                                        'Ready to Generate'}
-                        </h3>
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                            <span>{generatedCount} of {csvData.length} pins</span>
-                            {activeMode && (
-                                <span className="flex items-center gap-1 text-xs bg-gray-100 px-2 py-0.5 rounded">
-                                    {activeMode === 'server' ? <Server className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}
-                                    {activeMode === 'server' ? 'Server' : 'Client'}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {status === 'completed' && (
-                            <CheckCircle className="w-6 h-6 text-green-500" />
-                        )}
-                        {status === 'processing' && (
-                            <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-                        )}
-                        {status === 'failed' && (
-                            <AlertCircle className="w-6 h-6 text-red-500" />
-                        )}
-                    </div>
+            {/* Enhanced Progress Tracker */}
+            <EnhancedProgressTracker
+                completed={generatedCount || progress.current}
+                total={csvData.length}
+                status={trackerStatus}
+                pinsPerSecond={progress.currentSpeed}
+                elapsedTimeMs={progress.elapsedTime}
+                etaFormatted={progress.estimatedTimeRemaining > 0 
+                    ? formatDuration(progress.estimatedTimeRemaining) 
+                    : '--'}
+                isEtaReliable={(generatedCount || progress.current) >= 5}
+                currentPinTitle={progress.currentPinTitle}
+                currentPinIndex={progress.currentPinIndex}
+                pauseEnabled={settings.pauseEnabled}
+                isPausing={isPausing}
+                onPause={pauseGeneration}
+                onResume={resumeGeneration}
+                errorCount={progress.errors.length}
+            />
+
+            {/* Render Mode Indicator */}
+            {activeMode && (
+                <div className="flex items-center gap-2 text-sm text-gray-500 px-2">
+                    <span className="flex items-center gap-1 text-xs bg-gray-100 px-2 py-0.5 rounded">
+                        {activeMode === 'server' ? <Server className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}
+                        {activeMode === 'server' ? 'Server Rendering' : 'Client Rendering'}
+                    </span>
                 </div>
+            )}
 
-                {/* Progress Bar */}
-                <div className="h-3 bg-gray-200 rounded-full overflow-hidden mb-4">
-                    <div
-                        className={cn(
-                            "h-full transition-all duration-300",
-                            status === 'completed' ? "bg-green-500" :
-                                status === 'failed' ? "bg-red-500" :
-                                    "bg-blue-500"
-                        )}
-                        style={{ width: `${progress.percentage}%` }}
-                    />
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex flex-col gap-3">
-                    {/* Resume from Saved State */}
-                    {canResume && !isStale && status !== 'processing' && status !== 'completed' && savedState &&
-                        savedState.lastCompletedIndex < savedState.totalPins - 1 &&
-                        (generatedCount || progress.current) < csvData.length && (() => {
-                            const pinsRemaining = Math.max(0, csvData.length - savedState.lastCompletedIndex - 1);
-                            return pinsRemaining > 0;
-                        })() && (
-                            <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-                                <div className="flex-1">
-                                    <p className="text-sm font-medium text-green-900">
-                                        Resume Available
-                                    </p>
-                                    <p className="text-xs text-green-700">
-                                        {Math.max(0, csvData.length - savedState!.lastCompletedIndex - 1)} of {csvData.length} pins remaining
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={() => {
-                                        startGeneration(savedState!.lastCompletedIndex + 1);
-                                        toast.info(`Resuming from pin ${savedState!.lastCompletedIndex + 2}`);
-                                    }}
-                                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
-                                >
-                                    <RefreshCw className="w-4 h-4" />
-                                    Resume
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        clearProgress();
-                                        toast.success('Cleared saved progress');
-                                    }}
-                                    className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
-                                >
-                                    Clear
-                                </button>
-                            </div>
-                        )}
-
-                    <div className="flex items-center gap-3">
-                        {/* Start / Resume Button */}
-                        {(status === 'pending' || status === 'paused' || status === 'failed') && (
-                            <button
-                                onClick={() => status === 'paused' ? resumeGeneration() : startGeneration(0)}
-                                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
-                            >
-                                <Play className="w-5 h-5" />
-                                {status === 'paused' ? 'Continue Generation' : 'Start Generation'}
-                            </button>
-                        )}
-
-                        {/* Pause Button */}
-                        {status === 'processing' && settings.pauseEnabled && (
-                            <button
-                                onClick={pauseGeneration}
-                                disabled={isPausing}
-                                className={cn(
-                                    "flex items-center gap-2 px-6 py-3 bg-amber-500 text-white rounded-lg font-medium transition-colors",
-                                    isPausing ? "opacity-50 cursor-not-allowed" : "hover:bg-amber-600"
-                                )}
-                            >
-                                <Pause className="w-5 h-5" />
-                                {isPausing ? 'Pausing...' : 'Pause'}
-                            </button>
-                        )}
-
-                        {/* Regenerate All Button */}
-                        {(status === 'paused' || status === 'completed') && progress.current > 0 && (
-                            <button
-                                onClick={regenerateAll}
-                                className="flex items-center gap-2 px-4 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-                            >
-                                <RotateCcw className="w-5 h-5" />
-                                Regenerate All
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Error Summary */}
-                    {progress.errors.length > 0 && (
-                        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                            <p className="text-red-700 font-medium">
-                                {progress.errors.length} pin(s) failed to generate
+            {/* Resume from Saved State */}
+            {canResume && !isStale && status !== 'processing' && status !== 'completed' && savedState &&
+                savedState.lastCompletedIndex < savedState.totalPins - 1 &&
+                (generatedCount || progress.current) < csvData.length && (() => {
+                    const pinsRemaining = Math.max(0, csvData.length - savedState.lastCompletedIndex - 1);
+                    return pinsRemaining > 0;
+                })() && (
+                    <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <div className="flex-1">
+                            <p className="text-sm font-medium text-green-900">
+                                Resume Available
                             </p>
-                            <button className="text-red-600 text-sm underline mt-1">
-                                Retry Failed Pins
-                            </button>
+                            <p className="text-xs text-green-700">
+                                {Math.max(0, csvData.length - savedState!.lastCompletedIndex - 1)} of {csvData.length} pins remaining
+                            </p>
                         </div>
-                    )}
-                </div>
+                        <button
+                            onClick={() => {
+                                startGeneration(savedState!.lastCompletedIndex + 1);
+                                toast.info(`Resuming from pin ${savedState!.lastCompletedIndex + 2}`);
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                            Resume
+                        </button>
+                        <button
+                            onClick={() => {
+                                clearProgress();
+                                toast.success('Cleared saved progress');
+                            }}
+                            className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+                        >
+                            Clear
+                        </button>
+                    </div>
+                )}
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3">
+                {/* Start Button - only when idle */}
+                {(status === 'pending' || status === 'failed') && (
+                    <button
+                        onClick={() => startGeneration(0)}
+                        className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                    >
+                        <Play className="w-5 h-5" />
+                        Start Generation
+                    </button>
+                )}
+
+                {/* Regenerate All Button */}
+                {(status === 'paused' || status === 'completed') && progress.current > 0 && (
+                    <button
+                        onClick={regenerateAll}
+                        className="flex items-center gap-2 px-4 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                    >
+                        <RotateCcw className="w-5 h-5" />
+                        Regenerate All
+                    </button>
+                )}
             </div>
         </div>
     );

@@ -19,6 +19,7 @@ export function FormActions({ className }: FormActionsProps) {
         csvData, 
         selectedTemplate, 
         fieldMapping,
+        previewStatus,
         isFormValid,
         getValidationErrors 
     } = useCampaignWizard();
@@ -30,6 +31,14 @@ export function FormActions({ className }: FormActionsProps) {
     };
 
     const handleSubmit = async () => {
+        // Check preview is ready
+        if (previewStatus !== 'ready') {
+            toast.error('Please wait for previews to complete', {
+                description: 'Preview generation must be completed before creating the campaign.'
+            });
+            return;
+        }
+
         // Final validation
         const errors = getValidationErrors();
         if (errors.length > 0) {
@@ -71,7 +80,11 @@ export function FormActions({ className }: FormActionsProps) {
         }
     };
 
-    const canSubmit = isFormValid() && !isSubmitting;
+    // Preview must be ready AND form valid to submit
+    const canSubmit = isFormValid() && previewStatus === 'ready' && !isSubmitting;
+    
+    // Show status indicator when preview is generating
+    const showPreviewIndicator = previewStatus === 'generating' || previewStatus === 'error';
 
     return (
         <div className={cn(
