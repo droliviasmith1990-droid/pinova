@@ -9,6 +9,19 @@ import * as fabric from 'fabric';
 import { Element, TextElement, ShapeElement, ImageElement } from '@/types/editor';
 
 /**
+ * Extended Fabric.js object with custom properties for async loading
+ * Used to track pending image loads and element references
+ */
+interface ExtendedFabricObject extends fabric.FabricObject {
+    id?: string;
+    name?: string;
+    _needsAsyncImageLoad?: boolean;
+    _imageUrl?: string;
+    _element?: Element;
+}
+
+
+/**
  * Create a Fabric.js object from an Element
  */
 export function createFabricObject(element: Element): fabric.FabricObject | null {
@@ -46,9 +59,9 @@ export function createFabricObject(element: Element): fabric.FabricObject | null
                     strokeWidth: 1,
                 });
                 // Mark for async loading
-                (obj as any)._needsAsyncImageLoad = true;
-                (obj as any)._imageUrl = imageUrl;
-                (obj as any)._element = element;
+                (obj as ExtendedFabricObject)._needsAsyncImageLoad = true;
+                (obj as ExtendedFabricObject)._imageUrl = imageUrl;
+                (obj as ExtendedFabricObject)._element = element;
             } else {
                 // No URL - show empty placeholder
                 obj = new fabric.Rect({
@@ -123,8 +136,8 @@ export function createFabricObject(element: Element): fabric.FabricObject | null
 
     if (obj) {
         // Store element ID and metadata on the fabric object
-        (obj as any).id = element.id;
-        (obj as any).name = element.name;
+        (obj as ExtendedFabricObject).id = element.id;
+        (obj as ExtendedFabricObject).name = element.name;
 
         // Apply common properties
         obj.set({
@@ -214,8 +227,8 @@ export function syncElementToFabric(
  * Extract Element data from a Fabric object
  */
 export function syncFabricToElement(fabricObject: fabric.FabricObject): Element | null {
-    const id = (fabricObject as any).id;
-    const name = (fabricObject as any).name || 'Untitled';
+    const id = (fabricObject as ExtendedFabricObject).id;
+    const name = (fabricObject as ExtendedFabricObject).name || 'Untitled';
 
     if (!id) {
         console.warn('[ObjectFactory] Fabric object missing ID');
@@ -320,8 +333,8 @@ export async function loadFabricImage(
         });
 
         // Store element ID for reference
-        (img as any).id = element.id;
-        (img as any).name = element.name;
+        (img as unknown as ExtendedFabricObject).id = element.id;
+        (img as unknown as ExtendedFabricObject).name = element.name;
 
         // Apply corner radius if specified
         if (element.cornerRadius && element.cornerRadius > 0) {
@@ -360,8 +373,8 @@ export async function loadFabricImage(
                     opacity: element.opacity ?? 1,
                 });
 
-                (img as any).id = element.id;
-                (img as any).name = element.name;
+                (img as unknown as ExtendedFabricObject).id = element.id;
+                (img as unknown as ExtendedFabricObject).name = element.name;
 
                 console.log('[ObjectFactory] Image loaded via proxy fallback:', element.id);
                 return img;
