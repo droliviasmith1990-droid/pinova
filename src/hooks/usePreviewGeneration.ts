@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { Element, CanvasSize } from '@/types/editor';
+import { Element, CanvasSize, ImageElement } from '@/types/editor';
 import { renderTemplate, exportToBlob, FieldMapping } from '@/lib/fabric/engine';
 import { getCanvasPool } from '@/lib/canvas/CanvasPool';
 
@@ -218,6 +218,30 @@ export function usePreviewGeneration({
                         canvasSize.height
                     );
                     
+                    // BUGFIX: Enhanced logging for multi-image debugging
+                    console.log(`[PreviewGen] Generating pin ${i + 1}:`, {
+                        rowData: Object.keys(rowData),
+                        fieldMapping,
+                        imageElementCount: templateElements.filter(e => e.type === 'image').length,
+                        textElementCount: templateElements.filter(e => e.type === 'text').length,
+                    });
+                    
+                    // Log each image element's dynamic binding
+                    templateElements.forEach((el, idx) => {
+                        if (el.type === 'image') {
+                            const imgEl = el as ImageElement;
+                            console.log(`[PreviewGen] Image element ${idx} (${imgEl.name}):`, {
+                                isDynamic: imgEl.isDynamic,
+                                dynamicSource: imgEl.dynamicSource,
+                                imageUrl: imgEl.imageUrl?.substring(0, 50), // Truncate for readability
+                                mappedColumn: imgEl.dynamicSource ? fieldMapping[imgEl.dynamicSource] : 'N/A',
+                                csvValue: imgEl.dynamicSource && fieldMapping[imgEl.dynamicSource] 
+                                    ? rowData[fieldMapping[imgEl.dynamicSource]]?.substring(0, 50) // Truncate for readability
+                                    : 'N/A'
+                            });
+                        }
+                    });
+
                     // Render the template with data - using RenderConfig object
                     await renderTemplate(
                         canvas,

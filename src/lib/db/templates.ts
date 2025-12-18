@@ -132,6 +132,10 @@ export async function saveTemplate(data: SaveTemplateData): Promise<DbTemplate |
     }
 
     try {
+        // BUGFIX: Sanitize elements to remove any non-serializable properties
+        // This prevents database errors from internal Fabric.js metadata
+        const sanitizedElements = data.elements ? JSON.parse(JSON.stringify(data.elements)) : [];
+        
         if (data.id) {
             // Update existing template
             // FIX: Only include fields that are explicitly provided
@@ -140,7 +144,7 @@ export async function saveTemplate(data: SaveTemplateData): Promise<DbTemplate |
                 name: data.name,
                 canvas_size: data.canvas_size,
                 background_color: data.background_color,
-                elements: data.elements,
+                elements: sanitizedElements,
                 updated_at: new Date().toISOString(),
             };
 
@@ -162,6 +166,11 @@ export async function saveTemplate(data: SaveTemplateData): Promise<DbTemplate |
 
             if (error) {
                 console.error('Error updating template:', error);
+                console.error('Template data that failed:', {
+                    id: data.id,
+                    elementCount: sanitizedElements.length,
+                    elementsSize: JSON.stringify(sanitizedElements).length,
+                });
                 return null;
             }
 
@@ -174,7 +183,7 @@ export async function saveTemplate(data: SaveTemplateData): Promise<DbTemplate |
                 description: data.description || null,
                 canvas_size: data.canvas_size,
                 background_color: data.background_color,
-                elements: data.elements,
+                elements: sanitizedElements,
                 thumbnail_url: data.thumbnail_url || null,
                 category: data.category || null,
                 category_id: data.category_id || null,
@@ -190,6 +199,11 @@ export async function saveTemplate(data: SaveTemplateData): Promise<DbTemplate |
 
             if (error) {
                 console.error('Error inserting template:', error);
+                console.error('Template data that failed:', {
+                    name: data.name,
+                    elementCount: sanitizedElements.length,
+                    elementsSize: JSON.stringify(sanitizedElements).length,
+                });
                 return null;
             }
 
@@ -197,6 +211,9 @@ export async function saveTemplate(data: SaveTemplateData): Promise<DbTemplate |
         }
     } catch (error) {
         console.error('Error saving template:', error);
+        if (error instanceof Error) {
+            console.error('Error details:', error.message, error.stack);
+        }
         return null;
     }
 }

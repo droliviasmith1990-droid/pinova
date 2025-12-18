@@ -259,8 +259,16 @@ export class CanvasManager {
             // Load image asynchronously and replace placeholder
             loadFabricImage(imageUrl, imageElement).then((img) => {
                 if (img && this.canvas) {
-                    // Remove placeholder
+                    // Get placeholder to transfer metadata
                     const placeholder = this.elementMap.get(element.id);
+                    
+                    // CRITICAL FIX: Transfer _element metadata from placeholder to loaded image
+                    // This preserves dynamicSource, isDynamic, and all other metadata
+                    if (placeholder && (placeholder as any)._element) {
+                        (img as any)._element = (placeholder as any)._element;
+                        console.log('[CanvasManager] Transferred metadata to loaded image:', element.id);
+                    }
+                    
                     if (placeholder) {
                         this.canvas.remove(placeholder);
                     }

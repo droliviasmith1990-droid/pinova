@@ -188,23 +188,106 @@ async function createFabricObject(
     else if (el.type === 'image') {
         const imageEl = el as ImageElement;
         const src = getDynamicImageUrl(imageEl, rowData, fieldMapping);
+        
+        console.log(`[Render] Image ${imageEl.name}: URL resolved to:`, {
+            isDynamic: imageEl.isDynamic,
+            dynamicSource: imageEl.dynamicSource,
+            imageUrl: imageEl.imageUrl?.substring(0, 50),
+            resolvedSrc: src?.substring(0, 50),
+            hasUrl: !!src
+        });
+        
         if (src) {
+            console.log(`[Render] Loading image from: ${src.substring(0, 80)}...`);
             const img = await loadImageToCanvas(src, commonOptions);
-            if (img.width && imageEl.width) {
-                img.scaleX = imageEl.width / img.width;
-                img.scaleY = imageEl.height / img.height;
+            console.log(`[Render] Image loaded successfully: ${imageEl.name} (${img.width}x${img.height})`);
+            
+            // 🔧 CRITICAL FIX: fabric.FabricImage.fromURL ignores left/top options
+            // We must explicitly set position AFTER image loads
+            img.set({
+                left: imageEl.x,
+                top: imageEl.y,
+                angle: imageEl.rotation || 0,
+                opacity: imageEl.opacity ?? 1,
+            });
+            
+            console.log(`[Render] 🔧 Applied position to image: left=${imageEl.x}, top=${imageEl.y}`);
+            
+            // Apply fit mode to respect aspect ratio
+            if (img.width && img.height && imageEl.width && imageEl.height) {
+                const fitMode = imageEl.fitMode || 'fill'; // Default to fill
+                
+                const targetWidth = imageEl.width;
+                const targetHeight = imageEl.height;
+                
+                let scale: number;
+                
+                if (fitMode === 'cover') {
+                    // Scale to cover the entire frame (may crop)
+                    // Use the larger scale to ensure full coverage
+                    scale = Math.max(targetWidth / img.width, targetHeight / img.height);
+                    img.scaleX = scale;
+                    img.scaleY = scale;
+                    
+                    // Create clip path to crop to frame bounds
+                    img.clipPath = new fabric.Rect({
+                        width: targetWidth / scale,
+                        height: targetHeight / scale,
+                        originX: 'center',
+                        originY: 'center',
+                        left: 0,
+                        top: 0,
+                    });
+                    
+                    console.log(`[Render] Applied 'cover' fit: scale=${scale.toFixed(2)}, will crop to ${targetWidth}x${targetHeight}`);
+                    
+                } else if (fitMode === 'contain') {
+                    // Scale to fit within frame (may have empty space)
+                    // Use the smaller scale to fit entirely
+                    scale = Math.min(targetWidth / img.width, targetHeight / img.height);
+                    img.scaleX = scale;
+                    img.scaleY = scale;
+                    
+                    console.log(`[Render] Applied 'contain' fit: scale=${scale.toFixed(2)}, maintains aspect ratio`);
+                    
+                } else {
+                    // 'fill' - stretch to exact dimensions (old behavior)
+                    img.scaleX = targetWidth / img.width;
+                    img.scaleY = targetHeight / img.height;
+                    
+                    console.log(`[Render] Applied 'fill' fit: scaleX=${img.scaleX.toFixed(2)}, scaleY=${img.scaleY.toFixed(2)}`);
+                }
+                
+                // Apply corner radius if specified (after fit mode scaling)
+                if (imageEl.cornerRadius && fitMode !== 'cover') {
+                    img.clipPath = new fabric.Rect({
+                        width: img.width,
+                        height: img.height,
+                        rx: imageEl.cornerRadius / (img.scaleX || 1),
+                        ry: imageEl.cornerRadius / (img.scaleY || 1),
+                        originX: 'center',
+                        originY: 'center',
+                    });
+                } else if (imageEl.cornerRadius && fitMode === 'cover') {
+                    // For cover mode, apply corner radius to the clip path
+                    const scale = Math.max(targetWidth / img.width, targetHeight / img.height);
+                    img.clipPath = new fabric.Rect({
+                        width: targetWidth / scale,
+                        height: targetHeight / scale,
+                        rx: imageEl.cornerRadius / scale,
+                        ry: imageEl.cornerRadius / scale,
+                        originX: 'center',
+                        originY: 'center',
+                        left: 0,
+                        top: 0,
+                    });
+                }
             }
-            if (imageEl.cornerRadius) {
-                img.clipPath = new fabric.Rect({
-                    width: img.width, height: img.height,
-                    rx: imageEl.cornerRadius / (img.scaleX || 1),
-                    ry: imageEl.cornerRadius / (img.scaleY || 1),
-                    originX: 'center', originY: 'center',
-                });
-            }
+            
             fabricObject = img;
         } else {
             // Placeholder for empty image
+            console.warn(`[Render] No URL for image ${imageEl.name}, creating placeholder`);
             fabricObject = new fabric.Rect({
                 ...commonOptions, width: imageEl.width || 200, height: imageEl.height || 200,
                 fill: '#f3f4f6', stroke: '#d1d5db', strokeWidth: 2, strokeDashArray: [8, 4]
@@ -286,6 +369,24 @@ export async function renderTemplate(
     // Safety: Check if canvas is disposed
     if (!canvas.getElement()) return;
 
+    // 🔍 DEBUG: Canvas state before render
+    console.log('[Render] 🎯 Canvas state BEFORE render:', {
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        viewportTransform: canvas.viewportTransform,
+        backgroundColor: canvas.backgroundColor,
+    });
+
+    // 🔍 DEBUG: Element positions from template
+    console.log('[Render] 📐 Elements from template (original positions):', elements.map(el => ({
+        name: el.name,
+        type: el.type,
+        x: el.x,
+        y: el.y,
+        width: el.width,
+        height: el.height,
+    })));
+
     // 1. BUILD INDEX of existing canvas objects by elementId
     const existingObjectsMap = new Map<string, fabric.FabricObject>();
     canvas.getObjects().forEach(obj => {
@@ -324,13 +425,45 @@ export async function renderTemplate(
         return a.zIndex - b.zIndex;
     });
 
+    console.log(`[Render] About to add ${sortedNewElements.length} new elements:`, 
+        sortedNewElements.map(el => `${el.name} (${el.type})`));
+
     for (const el of sortedNewElements) {
+        console.log(`[Render] Creating fabric object for: ${el.name} (${el.type}, id: ${el.id})`);
+        console.log(`[Render] 📍 Template position for ${el.name}: x=${el.x}, y=${el.y}`);
+        
         const fabricObj = await createFabricObject(el, config, rowData, fieldMapping);
+        
         if (fabricObj) {
+            // 🔍 DEBUG: Compare template Y vs Fabric Y
+            console.log(`[Render] 🎯 Position comparison for ${el.name}:`, {
+                'Template Y': el.y,
+                'Fabric top': fabricObj.top,
+                'Difference': (fabricObj.top || 0) - el.y,
+                'Template X': el.x,
+                'Fabric left': fabricObj.left,
+                'ScaleX': fabricObj.scaleX,
+                'ScaleY': fabricObj.scaleY,
+            });
+            
             canvas.add(fabricObj);
-            console.log(`[Render] Added new element: ${el.id}`);
+            console.log(`[Render] ✅ Added element: ${el.name} (${el.type})`);
+        } else {
+            console.warn(`[Render] ❌ Failed to create fabric object for: ${el.name} (${el.type})`);
         }
     }
+
+    console.log(`[Render] Final canvas object count: ${canvas.getObjects().length}`);
+    
+    // 🔍 DEBUG: Final positions on canvas
+    console.log('[Render] 📊 Final object positions on canvas:', canvas.getObjects().map(obj => ({
+        name: (obj as any).name || 'unnamed',
+        type: (obj as any).type,
+        top: obj.top,
+        left: obj.left,
+        width: obj.width,
+        height: obj.height,
+    })));
 
     // 7. UPDATE canvas dimensions and background (safe, doesn't affect objects)
     canvas.setDimensions({ width: config.width, height: config.height });

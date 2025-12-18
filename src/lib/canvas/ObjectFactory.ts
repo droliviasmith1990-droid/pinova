@@ -182,6 +182,10 @@ export function createFabricObject(element: Element): fabric.FabricObject | null
         // Store element ID and metadata on the fabric object
         (obj as ExtendedFabricObject).id = element.id;
         (obj as ExtendedFabricObject).name = element.name;
+        
+        // BUGFIX: Store complete element data for metadata preservation
+        // This allows syncFabricToElement to preserve properties not stored in Fabric.js
+        (obj as ExtendedFabricObject)._element = element;
 
         // Apply common properties
         obj.set({
@@ -207,12 +211,30 @@ function hasPropertyChanged<T>(current: T | undefined, update: T | undefined): b
 /**
  * Sync element updates to an existing Fabric object
  * Uses diff detection to only update changed properties (70% faster)
+ * 
+ * BUGFIX: Updates stored element reference to keep metadata fresh
  */
 export function syncElementToFabric(
     fabricObject: fabric.FabricObject,
     updates: Partial<Element>
 ): void {
     let hasPositionChanges = false;
+    
+    // BUGFIX: Update stored element with new data to preserve metadata
+    // Only update if this is a direct element update, not a sync operation
+    const extFabric = fabricObject as ExtendedFabricObject;
+    if (extFabric._element && updates && Object.keys(updates).length > 0) {
+        // Create clean merge without any internal Fabric-specific properties
+        const cleanUpdates: Record<string, unknown> = {};
+        for (const key in updates) {
+            const value = updates[key as keyof Element];
+            // Skip undefined and function values
+            if (value !== undefined && typeof value !== 'function') {
+                cleanUpdates[key] = value;
+            }
+        }
+        extFabric._element = { ...extFabric._element, ...cleanUpdates } as Element;
+    }
 
     // Position properties - most frequently changed during drag
     if (hasPropertyChanged(fabricObject.left, updates.x)) {
@@ -224,18 +246,30 @@ export function syncElementToFabric(
         hasPositionChanges = true;
     }
 
-    // Size properties - check against scaled dimensions
-    if (updates.width !== undefined) {
-        const currentWidth = fabricObject.width ?? 0;
-        if (currentWidth !== updates.width) {
-            fabricObject.set('width', updates.width);
-            hasPositionChanges = true;
+
+    // Size properties - FIXED to account for scaleX/scaleY transforms
+    if (updates.width !== undefined || updates.height !== undefined) {
+        const currentScaledWidth = (fabricObject.width || 0) * (fabricObject.scaleX || 1);
+        const currentScaledHeight = (fabricObject.height || 0) * (fabricObject.scaleY || 1);
+        
+        const newProps: Record<string, number> = {};
+        let needsUpdate = false;
+        
+        if (updates.width !== undefined && currentScaledWidth !== updates.width) {
+            newProps.width = updates.width;
+            needsUpdate = true;
         }
-    }
-    if (updates.height !== undefined) {
-        const currentHeight = fabricObject.height ?? 0;
-        if (currentHeight !== updates.height) {
-            fabricObject.set('height', updates.height);
+        
+        if (updates.height !== undefined && currentScaledHeight !== updates.height) {
+            newProps.height = updates.height;
+            needsUpdate = true;
+        }
+        
+        if (needsUpdate) {
+            // Reset both scales together to prevent aspect ratio distortion
+            newProps.scaleX = 1;
+            newProps.scaleY = 1;
+            fabricObject.set(newProps);
             hasPositionChanges = true;
         }
     }
@@ -278,7 +312,6 @@ export function syncElementToFabric(
         // Use stored original text to properly switch transforms (Phase 1 fix)
         if (textUpdates.textTransform !== undefined || textUpdates.text !== undefined) {
             // Get original untransformed text: prefer update, then stored original, then fabric text
-            const extFabric = fabricObject as unknown as ExtendedFabricObject;
             const originalText = textUpdates.text ?? extFabric._originalText ?? fabricObject.text ?? '';
             const transform = textUpdates.textTransform ?? 'none';
             const displayText = applyTextTransform(originalText, transform);
@@ -312,29 +345,44 @@ export function syncElementToFabric(
 
 /**
  * Extract Element data from a Fabric object
+ * 
+ * BUGFIX: Preserves metadata not stored on Fabric objects by merging with
+ * stored element data. This fixes Bug 1: template elements losing metadata on reload.
  */
 export function syncFabricToElement(fabricObject: fabric.FabricObject): Element | null {
     const id = (fabricObject as ExtendedFabricObject).id;
     const name = (fabricObject as ExtendedFabricObject).name || 'Untitled';
+    const storedElement = (fabricObject as ExtendedFabricObject)._element;
 
     if (!id) {
         console.warn('[ObjectFactory] Fabric object missing ID');
         return null;
     }
 
-    // Base properties common to all elements
+    // CRITICAL FIX: Calculate actual displayed dimensions accounting for scale
+    // Fabric.js stores natural/intrinsic width/height and applies scaleX/scaleY transforms
+    // For images, width/height are the natural dimensions, so we must multiply by scale
+    const baseWidth = fabricObject.width || 0;
+    const baseHeight = fabricObject.height || 0;
+    const scaleX = fabricObject.scaleX || 1;
+    const scaleY = fabricObject.scaleY || 1;
+    
+    const displayedWidth = baseWidth * scaleX;
+    const displayedHeight = baseHeight * scaleY;
+
+    // Base properties common to all elements  (extracted from Fabric state)
     const base = {
         id,
         name,
         x: fabricObject.left || 0,
         y: fabricObject.top || 0,
-        width: fabricObject.width || 0,
-        height: fabricObject.height || 0,
+        width: displayedWidth,   // Use displayed dimensions, not natural dimensions
+        height: displayedHeight, // Use displayed dimensions, not natural dimensions
         rotation: fabricObject.angle || 0,
         opacity: fabricObject.opacity ?? 1,
         locked: !fabricObject.selectable,
         visible: fabricObject.visible !== false,
-        zIndex: 0, // Calculated from canvas order
+        zIndex: storedElement?.zIndex || 0, // Preserve original zIndex
     };
 
     // Type-specific properties
@@ -353,14 +401,14 @@ export function syncFabricToElement(fabricObject: fabric.FabricObject): Element 
             }
         }
         
-        return {
+        const textElement: TextElement = {
             ...base,
             type: 'text',
             text: fabricObject.text || '',
             fontFamily: fabricObject.fontFamily || 'Arial',
             fontSize: fabricObject.fontSize || 16,
             fontStyle: 'normal',
-            fontWeight, // Phase 1: Preserve fontWeight
+            fontWeight,
             fill: (fabricObject.fill as string) || '#000000',
             align: (fabricObject.textAlign as 'left' | 'center' | 'right') || 'left',
             verticalAlign: 'top',
@@ -368,12 +416,97 @@ export function syncFabricToElement(fabricObject: fabric.FabricObject): Element 
             letterSpacing: (fabricObject.charSpacing || 0) / 10,
             textDecoration: fabricObject.underline ? 'underline' : (fabricObject.linethrough ? 'line-through' : ''),
             isDynamic: false,
-            // Note: textTransform, backgroundEnabled, etc. are NOT stored on fabric object
-            // They must be preserved from the original element in the store, not extracted here
-        } as TextElement;
+        };
+        
+        // BUGFIX: Merge metadata from stored element (preserves dynamicField, textTransform, etc.)
+        if (storedElement && storedElement.type === 'text') {
+            const storedText = storedElement as TextElement;
+            return {
+                ...textElement,
+                isDynamic: storedText.isDynamic,
+                dynamicField: storedText.dynamicField,
+                textTransform: storedText.textTransform,
+                backgroundEnabled: storedText.backgroundEnabled,
+                backgroundColor: storedText.backgroundColor,
+                backgroundCornerRadius: storedText.backgroundCornerRadius,
+                backgroundPadding: storedText.backgroundPadding,
+                curvedEnabled: storedText.curvedEnabled,
+                curvedPower: storedText.curvedPower,
+                autoFitText: storedText.autoFitText,
+                fontProvider: storedText.fontProvider,
+                richTextEnabled: storedText.richTextEnabled,
+                characterStyles: storedText.characterStyles,
+                shadowColor: storedText.shadowColor,
+                shadowBlur: storedText.shadowBlur,
+                shadowOffsetX: storedText.shadowOffsetX,
+                shadowOffsetY: storedText.shadowOffsetY,
+                shadowOpacity: storedText.shadowOpacity,
+                stroke: storedText.stroke,
+                strokeWidth: storedText.strokeWidth,
+            };
+        }
+        
+        return textElement;
+    }
+    
+    // Handle image elements (currently rendered as Rect or FabricImage)
+    if (fabricObject instanceof fabric.FabricImage) {
+        const imageElement: ImageElement = {
+            ...base,
+            type: 'image',
+            imageUrl: '',
+            fitMode: 'cover',
+            cornerRadius: 0,
+            isDynamic: false,
+        };
+        
+        // BUGFIX: Merge metadata from stored element (preserves dynamicSource, imageUrl, etc.)
+        if (storedElement && storedElement.type === 'image') {
+            const storedImage = storedElement as ImageElement;
+            return {
+                ...imageElement,
+                imageUrl: storedImage.imageUrl,
+                cropX: storedImage.cropX,
+                cropY: storedImage.cropY,
+                cropWidth: storedImage.cropWidth,
+                cropHeight: storedImage.cropHeight,
+                fitMode: storedImage.fitMode,
+                cornerRadius: storedImage.cornerRadius,
+                filters: storedImage.filters,
+                isDynamic: storedImage.isDynamic,
+                dynamicSource: storedImage.dynamicSource,
+                isCanvaBackground: storedImage.isCanvaBackground,
+                originalFilename: storedImage.originalFilename,
+            };
+        }
+        
+        return imageElement;
     }
 
     if (fabricObject instanceof fabric.Rect) {
+        // Check if this is an image placeholder or actual shape
+        if (storedElement && storedElement.type === 'image') {
+            // This is an image element rendered as placeholder
+            const storedImage = storedElement as ImageElement;
+            return {
+                ...base,
+                type: 'image',
+                imageUrl: storedImage.imageUrl,
+                cropX: storedImage.cropX,
+                cropY: storedImage.cropY,
+                cropWidth: storedImage.cropWidth,
+                cropHeight: storedImage.cropHeight,
+                fitMode: storedImage.fitMode,
+                cornerRadius: storedImage.cornerRadius,
+                filters: storedImage.filters,
+                isDynamic: storedImage.isDynamic,
+                dynamicSource: storedImage.dynamicSource,
+                isCanvaBackground: storedImage.isCanvaBackground,
+                originalFilename: storedImage.originalFilename,
+            } as ImageElement;
+        }
+        
+        // Regular rect shape
         return {
             ...base,
             type: 'shape',
@@ -436,9 +569,11 @@ export async function loadFabricImage(
             evented: !element.locked,
         });
 
-        // Store element ID for reference
+        // Store element ID and metadata for reference
         (img as unknown as ExtendedFabricObject).id = element.id;
         (img as unknown as ExtendedFabricObject).name = element.name;
+        // BUGFIX: Store complete element data for metadata preservation
+        (img as unknown as ExtendedFabricObject)._element = element;
 
         // Apply corner radius if specified
         if (element.cornerRadius && element.cornerRadius > 0) {
@@ -479,6 +614,8 @@ export async function loadFabricImage(
 
                 (img as unknown as ExtendedFabricObject).id = element.id;
                 (img as unknown as ExtendedFabricObject).name = element.name;
+                // BUGFIX: Store complete element data for metadata preservation
+                (img as unknown as ExtendedFabricObject)._element = element;
 
                 console.log('[ObjectFactory] Image loaded via proxy fallback:', element.id);
                 return img;
