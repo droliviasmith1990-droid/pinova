@@ -180,9 +180,15 @@ export const useElementsStore = create<ElementsState & ElementsActions>((set, ge
     },
 
     deleteElement: (id) => {
-        set((state) => ({
-            elements: state.elements.filter((el) => el.id !== id),
-        }));
+        set((state) => {
+            const filtered = state.elements.filter((el) => el.id !== id);
+            // Normalize zIndex after deletion to fill gaps
+            const normalized = filtered
+                .sort((a, b) => a.zIndex - b.zIndex)
+                .map((el, index) => ({ ...el, zIndex: index }));
+            
+            return { elements: normalized };
+        });
 
         // Sync selection - remove deleted element from selection
         const selection = useSelectionStore.getState();
@@ -198,12 +204,17 @@ export const useElementsStore = create<ElementsState & ElementsActions>((set, ge
         const element = state.elements.find((el) => el.id === id);
         if (!element) return null;
 
+        // Calculate top Z-index
+        const maxZ = state.elements.length > 0 
+            ? Math.max(...state.elements.map(e => e.zIndex)) 
+            : 0;
+
         const newElement: Element = {
             ...cloneDeep(element),
             id: generateId(),
             x: element.x + 20,
             y: element.y + 20,
-            zIndex: state.elements.length,
+            zIndex: maxZ + 1, // Ensure it goes to top
         };
 
         // For image elements, assign a new unique name and dynamicSource
@@ -236,7 +247,11 @@ export const useElementsStore = create<ElementsState & ElementsActions>((set, ge
     },
 
     setElements: (elements) => {
-        set({ elements });
+        // Normalize zIndex on set to ensure no gaps/duplicates and clean state
+        const normalized = [...elements]
+            .sort((a, b) => a.zIndex - b.zIndex)
+            .map((el, index) => ({ ...el, zIndex: index }));
+        set({ elements: normalized });
     },
 
     lockElement: (id, locked) => {

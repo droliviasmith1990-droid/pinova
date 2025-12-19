@@ -176,6 +176,7 @@ export function GenerationController({
 
     // Cleanup on unmount
     useEffect(() => {
+        isMountedRef.current = true;
         return () => {
             isMountedRef.current = false;
             throttledSaveProgressRef.current.cancel();
@@ -332,15 +333,8 @@ export function GenerationController({
     // Start Generation (Hybrid Logic)
     // ============================================
     const startGeneration = useCallback(async (startIndex: number = 0) => {
-        console.log('[GenerationController] startGeneration called', { startIndex, status, mounted: isMountedRef.current });
-        if (status === 'processing') {
-            console.log('[GenerationController] Blocked: already processing');
-            return;
-        }
-        if (!isMountedRef.current) {
-            console.log('[GenerationController] Blocked: component unmounted');
-            return;
-        }
+        if (status === 'processing') return;
+        if (!isMountedRef.current) return;
 
         setStatus('processing');
         onStatusChange('processing');
@@ -679,7 +673,6 @@ export function GenerationController({
                 {(status === 'pending' || status === 'failed') && (
                     <button
                         onClick={() => {
-                            console.log('[GenerationController] Start button clicked via UI');
                             startGeneration(0);
                         }}
                         className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm active:scale-95"

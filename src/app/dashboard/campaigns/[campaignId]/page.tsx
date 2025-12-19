@@ -112,7 +112,9 @@ export default function CampaignDetailPage() {
 
         try {
             log('Loading generated pins for campaign:', campaignId);
-            const pinsResponse = await fetch(`/api/generated-pins?campaign_id=${campaignId}`);
+            const pinsResponse = await fetch(`/api/generated-pins?campaign_id=${campaignId}`, {
+                credentials: 'include'
+            });
             const pinsResult = await pinsResponse.json();
 
             log('Pins API response:', pinsResult);
