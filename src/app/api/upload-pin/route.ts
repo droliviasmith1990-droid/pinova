@@ -8,6 +8,10 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { Readable } from 'stream';
 import { UploadPinMetadataSchema, validateRequest } from '@/lib/validations';
 
+// Route Segment Config: Increase body size limit to 10MB
+export const runtime = 'nodejs';
+export const maxDuration = 60; // 60 seconds timeout for large uploads
+
 // Debug logging - only in development
 const DEBUG = process.env.NODE_ENV === 'development';
 const log = (...args: unknown[]) => DEBUG && console.log(...args);
