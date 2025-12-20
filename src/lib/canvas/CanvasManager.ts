@@ -407,6 +407,9 @@ export class CanvasManager {
     /**
      * Reorder elements on the canvas based on their zIndex
      * This ensures Fabric.js object order matches element zIndex order
+     * 
+     * IMPORTANT: Uses remove-then-add approach for reliable ordering.
+     * The bringObjectToFront() loop approach was unreliable with async image loading.
      */
     reorderElementsByZIndex(elements: Element[]): void {
         if (!this.canvas) {
@@ -414,20 +417,40 @@ export class CanvasManager {
             return;
         }
 
-        // Sort elements by zIndex (ascending - lowest zIndex at bottom)
+        // Sort elements by zIndex (ascending - lowest zIndex at bottom of canvas stack)
         const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
 
-        console.log('[CanvasManager] Reordering elements by zIndex');
+        console.log('[CanvasManager] Reordering elements by zIndex:', 
+            sortedElements.map(e => `${e.name}:z${e.zIndex}`).join(', '));
 
-        // Fabric.js v6: Use sendToBack/bringToFront approach
-        // First, send all objects to back in reverse order (lowest zIndex first)
+        // Collect all fabric objects that exist in the element map (in sorted order)
+        const fabricObjects: fabric.FabricObject[] = [];
         for (const element of sortedElements) {
             const fabricObject = this.elementMap.get(element.id);
             if (fabricObject) {
-                // In Fabric.js v6, use bringObjectToFront to move each element to front
-                // This iteratively builds the correct order (lowest ends up at bottom)
-                this.canvas.bringObjectToFront(fabricObject);
+                fabricObjects.push(fabricObject);
+            } else {
+                console.warn('[CanvasManager] Element not found in map during reorder:', element.id);
             }
+        }
+
+        if (fabricObjects.length === 0) {
+            console.warn('[CanvasManager] No fabric objects to reorder');
+            return;
+        }
+
+        // RELIABLE APPROACH: Remove all tracked objects, then re-add in correct order
+        // Fabric.js places newly added objects at the TOP of the stack
+        // So we add in ascending zIndex order: lowest zIndex added first (goes to bottom)
+        
+        // Step 1: Remove all tracked objects from canvas
+        for (const obj of fabricObjects) {
+            this.canvas.remove(obj);
+        }
+
+        // Step 2: Re-add in correct z-order (lowest zIndex first = bottom of stack)
+        for (const obj of fabricObjects) {
+            this.canvas.add(obj);
         }
 
         this.debouncedRender();

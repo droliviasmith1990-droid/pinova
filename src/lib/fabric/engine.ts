@@ -46,6 +46,12 @@ async function loadImageToCanvas(url: string, options: Partial<fabric.ImageProps
     }
 
     // Browser Proxy Logic
+    // IMPORTANT: If URL is already a proxy URL or data URL, use it directly - no double-proxying!
+    if (url.startsWith('/api/proxy-image') || url.startsWith('data:')) {
+        try { return await tryLoad(url); }
+        catch { return createErrorPlaceholder(options.width as number, options.height as number); }
+    }
+    
     const knownCorsBlockedDomains = ['s3.tebi.io', 'tebi.io', 'amazonaws.com'];
     const needsProxy = knownCorsBlockedDomains.some(d => url.includes(d));
 
@@ -77,7 +83,22 @@ function replaceDynamicFields(text: string, rowData: Record<string, string>, fie
 
 function getDynamicImageUrl(element: ImageElement, rowData: Record<string, string>, fieldMapping: FieldMapping): string {
     const src = element.imageUrl || '';
-    if (element.isCanvaBackground && src) return `/api/proxy-image?url=${encodeURIComponent(src)}`;
+    
+    // For Canva backgrounds, use proxy but avoid double-encoding
+    if (element.isCanvaBackground && src) {
+        // If src is already a proxy URL, return as-is
+        if (src.startsWith('/api/proxy-image')) {
+            return src;
+        }
+        // If src is a data URL, return as-is (no proxy needed)
+        if (src.startsWith('data:')) {
+            return src;
+        }
+        // Otherwise, proxy the URL (encoding only if not already encoded)
+        // Check if URL appears to already be encoded (contains %XX patterns)
+        const needsEncoding = !src.includes('%3A') && !src.includes('%2F');
+        return `/api/proxy-image?url=${needsEncoding ? encodeURIComponent(src) : src}`;
+    }
 
     if (element.isDynamic && element.dynamicSource) {
         const col = fieldMapping[element.dynamicSource];
@@ -286,6 +307,7 @@ async function createFabricObject(
                 });
                 
                 console.log(`[Render] Applied COVER: scale=${scale.toFixed(3)}, offset=(${offsetX.toFixed(1)}, ${offsetY.toFixed(1)})`);
+                console.log(`[Render] COVER position calc: element(${imageEl.x}, ${imageEl.y}) - offset(${offsetX.toFixed(1)}, ${offsetY.toFixed(1)}) = fabric(${img.left}, ${img.top})`);
                 
             } else if (fitMode === 'contain') {
                 // CONTAIN MODE: Scale uniformly to fit within frame
@@ -456,14 +478,14 @@ export async function renderTemplate(
         if (obj) canvas.remove(obj);
     });
 
-    // 6. ADD new objects (sort by zIndex first for correct layering)
-    const sortedNewElements = [...newElements].sort((a, b) => {
-        const aBg = a.name?.toLowerCase().includes('background');
-        const bBg = b.name?.toLowerCase().includes('background');
-        if (aBg && !bBg) return -1;
-        if (!aBg && bBg) return 1;
-        return a.zIndex - b.zIndex;
-    });
+
+    // 6. ADD new objects sorted by zIndex (ascending = lower zIndex added first = bottom of stack)
+    // IMPORTANT: We use pure z-index sorting. The Layers panel is the source of truth for layer order.
+    // isCanvaBackground is just metadata - actual render order is determined by zIndex.
+    const sortedNewElements = [...newElements].sort((a, b) => a.zIndex - b.zIndex);
+    
+    console.log(`[Render] ✅ Sorted element order (by zIndex ascending):`,
+        sortedNewElements.map(el => `${el.name} (z:${el.zIndex})`).join(' → '));
 
     console.log(`[Render] About to add ${sortedNewElements.length} new elements:`, 
         sortedNewElements.map(el => `${el.name} (${el.type})`));
