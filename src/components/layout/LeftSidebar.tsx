@@ -109,11 +109,11 @@ export function LeftSidebar() {
     return (
         <>
             <aside
-                className="w-[72px] bg-gray-50/80 backdrop-blur-sm border-r border-gray-200/60 flex flex-col h-full"
+                className="w-[72px] bg-white/80 backdrop-blur-xl border-r border-white/40 flex flex-col h-full shadow-creative-sm z-30"
                 aria-label="Editor tools"
             >
                 {/* Tools Section */}
-                <div className="flex-1 flex flex-col items-center py-4 gap-2">
+                <div className="flex-1 flex flex-col items-center py-6 gap-3">
                     <ToolButton
                         icon={Hand}
                         label="Pan"
@@ -156,7 +156,7 @@ export function LeftSidebar() {
                 </div>
 
                 {/* Bottom Section - Templates */}
-                <div className="p-3 space-y-2">
+                <div className="p-3 space-y-3 pb-6">
                     {/* Import Canva Button */}
                     <RichTooltip
                         label="Import from Canva"
@@ -166,13 +166,13 @@ export function LeftSidebar() {
                         <button
                             onClick={handleImportCanva}
                             aria-label="Import design from Canva"
-                            className="w-full flex flex-col items-center justify-center gap-1 py-3 rounded-xl text-white text-xs font-semibold transition-all duration-200 hover:scale-105 hover:shadow-xl active:scale-95 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2"
+                            className="w-full flex flex-col items-center justify-center gap-1 py-3 rounded-xl text-white text-[10px] font-bold uppercase tracking-wide transition-all duration-300 hover:scale-105 hover:shadow-creative-lg active:scale-95 shadow-creative-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
                             style={{
-                                background: 'linear-gradient(145deg, #A855F7 0%, #7C3AED 100%)'
+                                background: 'linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)'
                             }}
                         >
-                            <Upload className="w-5 h-5" aria-hidden="true" />
-                            <span>Import</span>
+                            <Upload className="w-5 h-5 mb-0.5" aria-hidden="true" strokeWidth={2.5} />
+                            Import
                         </button>
                     </RichTooltip>
 
@@ -185,14 +185,14 @@ export function LeftSidebar() {
                         <button
                             onClick={handleNewTemplate}
                             aria-label="Create new blank template"
-                            className="relative w-full flex flex-col items-center justify-center gap-1 py-3 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 text-white text-xs font-semibold hover:from-blue-600 hover:to-blue-700 hover:scale-105 hover:shadow-xl active:scale-95 transition-all duration-200 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            className="relative w-full flex flex-col items-center justify-center gap-1 py-3 rounded-xl bg-linear-to-br from-blue-500 to-indigo-600 text-white text-[10px] font-bold uppercase tracking-wide hover:from-blue-600 hover:to-indigo-700 hover:scale-105 hover:shadow-creative-lg active:scale-95 transition-all duration-300 shadow-creative-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 group"
                         >
                             {/* Notification Badge */}
-                            <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-[8px] font-bold border-2 border-white shadow animate-pulse">
+                            <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center text-[9px] font-bold border-2 border-white shadow-sm animate-pulse">
                                 !
                             </div>
-                            <FilePlus className="w-5 h-5" aria-hidden="true" />
-                            <span>New</span>
+                            <FilePlus className="w-5 h-5 mb-0.5 group-hover:rotate-12 transition-transform" aria-hidden="true" strokeWidth={2.5} />
+                            New
                         </button>
                     </RichTooltip>
                 </div>

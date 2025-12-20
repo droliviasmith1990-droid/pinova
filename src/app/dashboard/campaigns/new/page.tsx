@@ -2,11 +2,12 @@
 
 import React, { useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { X, Loader2 } from 'lucide-react';
+import { X, Loader2, Check, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { CampaignWizardProvider, useCampaignWizard } from '@/lib/campaigns/CampaignWizardContext';
 import { getTemplate, TemplateListItem } from '@/lib/db/templates';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { 
     ConfigurationSidebar, 
     TemplateLibrarySection, 
@@ -14,6 +15,45 @@ import {
     FormActions 
 } from './components';
 import { PreviewSection } from '@/components/campaign/PreviewSection';
+
+function StepIndicator() {
+    const { campaignName, csvData, selectedTemplate, fieldMapping } = useCampaignWizard();
+
+    const steps = [
+        { id: 1, name: 'Setup', status: campaignName && csvData ? 'completed' : 'current' },
+        { id: 2, name: 'Template', status: selectedTemplate ? 'completed' : (campaignName && csvData ? 'current' : 'pending') },
+        { id: 3, name: 'Mapping', status: Object.keys(fieldMapping).length > 0 ? 'completed' : (selectedTemplate ? 'current' : 'pending') },
+        { id: 4, name: 'Preview', status: Object.keys(fieldMapping).length > 0 ? 'current' : 'pending' },
+    ];
+
+    return (
+        <div className="flex items-center gap-2">
+            {steps.map((step, index) => (
+                <div key={step.id} className="flex items-center">
+                    <div className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-300",
+                        step.status === 'completed' ? "bg-green-100 text-green-700" :
+                        step.status === 'current' ? "bg-primary-creative/10 text-primary-creative ring-1 ring-primary-creative/20" :
+                        "text-gray-400"
+                    )}>
+                        <div className={cn(
+                            "w-5 h-5 rounded-full flex items-center justify-center text-[10px]",
+                            step.status === 'completed' ? "bg-green-500 text-white" :
+                            step.status === 'current' ? "bg-primary-creative text-white" :
+                            "bg-gray-200 text-gray-500"
+                        )}>
+                            {step.status === 'completed' ? <Check className="w-3 h-3 stroke-[3]" /> : step.id}
+                        </div>
+                        <span>{step.name}</span>
+                    </div>
+                    {index < steps.length - 1 && (
+                        <div className="w-6 h-px bg-gray-200 mx-1" />
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+}
 
 function SinglePageContent() {
     const router = useRouter();
@@ -80,57 +120,84 @@ function SinglePageContent() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-50/50">
             {/* Header */}
-            <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-                <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Create Campaign</h1>
-                        <p className="text-gray-600 text-sm mt-0.5">
-                            Configure your new automated pin generation workflow
-                        </p>
+            <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50 transition-all duration-300">
+                <div className="max-w-[1600px] mx-auto px-6 py-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-8">
+                            <div>
+                                <h1 className="font-heading font-bold text-xl text-gray-900">New Campaign</h1>
+                            </div>
+                            
+                            {/* Desktop Steps */}
+                            <div className="hidden lg:block">
+                                <StepIndicator />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                             <button
+                                onClick={() => router.push('/dashboard/campaigns')}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100/80 rounded-full transition-all"
+                            >
+                                <X className="w-4 h-4" />
+                                <span className="hidden sm:inline">Cancel</span>
+                            </button>
+                        </div>
                     </div>
-                    <button
-                        onClick={() => router.push('/dashboard/campaigns')}
-                        className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                        <X className="w-5 h-5" />
-                        Cancel
-                    </button>
                 </div>
             </header>
 
-            <main className="max-w-7xl mx-auto px-6 py-8">
+            <main className="max-w-[1600px] mx-auto px-6 py-8">
                 {/* Two-column layout */}
-                <div className="grid lg:grid-cols-12 gap-6">
+                <div className="grid lg:grid-cols-12 gap-8 items-start">
                     {/* Left Sidebar - Configuration */}
-                    <div className="lg:col-span-3">
+                    <div className="lg:col-span-3 space-y-6">
                         <ConfigurationSidebar />
+                        
+                        {/* Mobile Steps */}
+                        <div className="lg:hidden bg-white p-4 rounded-xl border border-gray-200">
+                             <StepIndicator />
+                        </div>
                     </div>
 
                     {/* Main Content */}
-                    <div className="lg:col-span-9 space-y-6">
+                    <div className="lg:col-span-9 space-y-8">
                         {/* Template Library */}
-                        <TemplateLibrarySection 
-                            onTemplateSelect={scrollToFieldMapping}
-                        />
+                        <div className="bg-transparent rounded-3xl transition-all duration-500">
+                            <TemplateLibrarySection 
+                                onTemplateSelect={scrollToFieldMapping}
+                            />
+                        </div>
 
                         {/* Field Mapping (conditional) */}
-                        {selectedTemplate && (
-                            <div ref={fieldMappingRef}>
-                                <FieldMappingSection />
-                            </div>
-                        )}
+                        <div 
+                            ref={fieldMappingRef} 
+                            className={cn(
+                                "transition-all duration-700 ease-out",
+                                selectedTemplate ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10 pointer-events-none h-0 overflow-hidden"
+                            )}
+                        >
+                            {selectedTemplate && <FieldMappingSection />}
+                        </div>
 
                         {/* Preview Section - Shows after field mapping is configured */}
-                        {selectedTemplate && csvData && Object.keys(fieldMapping).length > 0 && (
-                            <PreviewSection />
-                        )}
+                        <div className={cn(
+                            "transition-all duration-700 ease-out delay-100",
+                            selectedTemplate && csvData && Object.keys(fieldMapping).length > 0
+                                ? "opacity-100 translate-y-0"
+                                : "opacity-0 translate-y-10 pointer-events-none h-0 overflow-hidden"
+                        )}>
+                            {selectedTemplate && csvData && Object.keys(fieldMapping).length > 0 && (
+                                <PreviewSection />
+                            )}
+                        </div>
+                        
+                         {/* Form Actions */}
+                         <FormActions />
                     </div>
                 </div>
-
-                {/* Form Actions */}
-                <FormActions />
             </main>
         </div>
     );
@@ -150,7 +217,7 @@ export default function NewCampaignPage() {
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <Loader2 className="w-10 h-10 animate-spin text-primary-creative" />
             </div>
         );
     }
@@ -163,7 +230,7 @@ export default function NewCampaignPage() {
         <CampaignWizardProvider>
             <Suspense fallback={
                 <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                    <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                    <Loader2 className="w-10 h-10 animate-spin text-primary-creative" />
                 </div>
             }>
                 <SinglePageContent />
@@ -171,4 +238,3 @@ export default function NewCampaignPage() {
         </CampaignWizardProvider>
     );
 }
-

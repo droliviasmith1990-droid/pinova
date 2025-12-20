@@ -191,7 +191,7 @@ export const RichTextEditor = memo(function RichTextEditor({
         <div
             ref={editorRef}
             style={editorStyle}
-            className="bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+            className="bg-white/95 backdrop-blur-2xl rounded-2xl shadow-creative-2xl border border-white/50 overflow-hidden ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-200"
             role="dialog"
             aria-label="Rich Text Editor"
             aria-modal="true"
@@ -202,18 +202,20 @@ export const RichTextEditor = memo(function RichTextEditor({
             </div>
             
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
-                <span className="text-sm font-medium text-gray-700">Edit Text</span>
-                <div className="flex items-center gap-1">
+            <div className="flex items-center justify-between px-4 py-3 bg-gray-50/50 border-b border-gray-100/50">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Edit Content</span>
+                <div className="flex items-center gap-2">
                     {hasChanges && (
-                        <span className="text-xs text-amber-600 mr-2">• Unsaved changes</span>
+                        <span className="text-[10px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100 border-dashed animate-pulse">
+                            Unsaved
+                        </span>
                     )}
                     <button
                         onClick={handleCancel}
-                        className="p-1 rounded hover:bg-gray-200 text-gray-500"
+                        className="p-1.5 rounded-lg hover:bg-gray-200/50 text-gray-400 hover:text-gray-700 transition-colors"
                         aria-label="Cancel"
                     >
-                        <X className="w-4 h-4" />
+                        <X className="w-4 h-4" strokeWidth={2.5} />
                     </button>
                 </div>
             </div>
@@ -273,28 +275,28 @@ export const RichTextEditor = memo(function RichTextEditor({
             </div>
             
             {/* Footer */}
-            <div className="flex items-center justify-end gap-2 px-4 py-3 bg-gray-50 border-t border-gray-100">
-                <button
-                    onClick={handleCancel}
-                    className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded transition-colors"
-                >
-                    Cancel
-                </button>
-                <button
-                    onClick={handleApply}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-                >
-                    <Check className="w-4 h-4" />
-                    Apply
-                </button>
-            </div>
-            
-            {/* Keyboard Hints */}
-            <div className="px-4 py-2 bg-gray-100 text-xs text-gray-500 flex items-center gap-4">
-                <span><kbd className="px-1 bg-gray-200 rounded">Ctrl+B</kbd> Bold</span>
-                <span><kbd className="px-1 bg-gray-200 rounded">Ctrl+I</kbd> Italic</span>
-                <span><kbd className="px-1 bg-gray-200 rounded">Ctrl+U</kbd> Underline</span>
-                <span><kbd className="px-1 bg-gray-200 rounded">Esc</kbd> Cancel</span>
+            <div className="flex items-center justify-between px-4 py-3 bg-gray-50/50 border-t border-gray-100/50">
+                 {/* Keyboard Hints */}
+                 <div className="text-[10px] text-gray-400 font-medium flex items-center gap-3">
+                    <span title="Bold"><kbd className="font-sans px-1 bg-white border border-gray-200 rounded shadow-sm text-gray-500">Ctrl+B</kbd></span>
+                    <span title="Italic"><kbd className="font-sans px-1 bg-white border border-gray-200 rounded shadow-sm text-gray-500">Ctrl+I</kbd></span>
+                 </div>
+
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleCancel}
+                        className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800 hover:bg-gray-100/50 rounded-lg transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleApply}
+                        className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold bg-linear-to-br from-blue-600 to-indigo-600 text-white rounded-lg shadow-creative-sm hover:shadow-creative-md hover:scale-105 active:scale-95 transition-all"
+                    >
+                        <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                        Apply
+                    </button>
+                </div>
             </div>
         </div>
     );

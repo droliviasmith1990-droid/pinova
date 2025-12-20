@@ -84,6 +84,8 @@ export function DynamicFieldPopup({
 
     if (!isOpen) return null;
 
+    const placeholder = elementType === 'image' ? 'e.g. ProductImage' : 'e.g. ProductName';
+
     const handleSave = () => {
         // Generate unique field name if empty and enabled
         let finalFieldName = fieldName.trim();
@@ -102,42 +104,41 @@ export function DynamicFieldPopup({
         }
     };
 
-    const placeholder = elementType === 'image' ? 'image1, productImage...' : 'text1, title...';
+const SUGGESTED_FIELDS = ['Brand', 'Title', 'Description', 'Price', 'Discount', 'Url', 'CallToAction'];
 
     return (
         <div
             ref={popupRef}
-            className="absolute top-full left-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 p-4 z-1010 w-64"
-            style={{ minWidth: '260px' }}
+            className="absolute top-full left-0 mt-3 bg-white/95 backdrop-blur-xl rounded-xl shadow-creative-xl border border-white/50 p-4 z-1010 w-72 animate-in fade-in zoom-in-95 duration-200"
         >
             {/* Header */}
-            <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2 text-gray-800 font-medium">
-                    <Zap size={16} className="text-purple-500" />
-                    Dynamic Field
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 text-gray-800 font-bold text-sm tracking-tight">
+                    <Zap size={16} className="text-purple-500 fill-purple-100" />
+                    Dynamic Link
                 </div>
                 <button
                     onClick={onClose}
-                    className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-gray-700"
+                    className="p-1 hover:bg-gray-100/80 rounded-lg text-gray-400 hover:text-gray-700 transition-colors"
                 >
-                    <X size={14} />
+                    <X size={14} strokeWidth={2.5} />
                 </button>
             </div>
 
             {/* Toggle */}
-            <div className="flex items-center justify-between mb-3 py-2 border-b border-gray-100">
-                <label htmlFor="dynamic-toggle" className="text-sm text-gray-600">
-                    Make Dynamic
+            <div className="flex items-center justify-between mb-4 py-3 border-b border-gray-100/50">
+                <label htmlFor="dynamic-toggle" className="text-sm font-medium text-gray-700">
+                    Enable Variable
                 </label>
                 <button
                     id="dynamic-toggle"
                     onClick={() => setEnabled(!enabled)}
-                    className={`relative w-10 h-5 rounded-full transition-colors ${
-                        enabled ? 'bg-purple-500' : 'bg-gray-300'
+                    className={`relative w-11 h-6 rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-200 ${
+                        enabled ? 'bg-purple-500 shadow-md' : 'bg-gray-200'
                     }`}
                 >
                     <div
-                        className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${
                             enabled ? 'translate-x-5' : 'translate-x-0'
                         }`}
                     />
@@ -145,9 +146,9 @@ export function DynamicFieldPopup({
             </div>
 
             {/* Field Name Input */}
-            <div className={enabled ? '' : 'opacity-50 pointer-events-none'}>
-                <label htmlFor="field-name" className="text-xs text-gray-500 block mb-1">
-                    Field Name
+            <div className={`transition-all duration-200 ${enabled ? 'opacity-100' : 'opacity-40 pointer-events-none grayscale'}`}>
+                <label htmlFor="field-name" className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                    Variable Name
                 </label>
                 <input
                     ref={inputRef}
@@ -157,27 +158,46 @@ export function DynamicFieldPopup({
                     onChange={(e) => setFieldName(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder={placeholder}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                    className="w-full px-3 py-2.5 text-sm bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 focus:bg-white transition-all placeholder:text-gray-400 font-medium text-gray-800"
                     disabled={!enabled}
                 />
-                <p className="text-xs text-gray-400 mt-1">
-                    Use this name in your CSV to map data
+                
+                {/* Suggestions */}
+                {enabled && (
+                    <div className="mt-3">
+                         <span className="text-[10px] text-gray-400 font-medium mb-1.5 block">SUGGESTIONS</span>
+                         <div className="flex flex-wrap gap-1.5">
+                            {SUGGESTED_FIELDS.map(suggestion => (
+                                <button
+                                    key={suggestion}
+                                    onClick={() => setFieldName(suggestion)}
+                                    className="px-2 py-1 text-xs rounded-md bg-gray-100/80 text-gray-600 hover:bg-purple-50 hover:text-purple-600 hover:scale-105 active:scale-95 transition-all border border-transparent hover:border-purple-100 font-medium"
+                                >
+                                    {suggestion}
+                                </button>
+                            ))}
+                         </div>
+                    </div>
+                )}
+
+                <p className="text-[11px] text-gray-400 mt-3 leading-relaxed">
+                    Maps to <code className="text-purple-600 bg-purple-50 px-1 py-0.5 rounded font-mono">{fieldName || '...'}</code> column in your spreadsheet.
                 </p>
             </div>
 
             {/* Actions */}
-            <div className="flex justify-end gap-2 mt-4">
+            <div className="flex justify-end gap-2 mt-5 pt-3 border-t border-gray-100/50">
                 <button
                     onClick={onClose}
-                    className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
+                    className="px-3 py-2 text-xs font-semibold text-gray-500 hover:text-gray-800 hover:bg-gray-100/50 rounded-lg transition-colors"
                 >
                     Cancel
                 </button>
                 <button
                     onClick={handleSave}
-                    className="px-3 py-1.5 text-sm bg-purple-500 text-white rounded-md hover:bg-purple-600"
+                    className="px-4 py-2 text-xs font-bold bg-linear-to-br from-purple-600 to-indigo-600 text-white rounded-lg shadow-creative-md hover:shadow-creative-lg hover:scale-105 active:scale-95 transition-all"
                 >
-                    Save
+                    Apply Changes
                 </button>
             </div>
         </div>

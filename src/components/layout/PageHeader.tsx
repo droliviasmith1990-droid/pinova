@@ -21,7 +21,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 const ROUTE_CONFIG: Record<string, { title: string; description: string; section: string }> = {
   "/dashboard": { 
@@ -89,85 +88,86 @@ export function PageHeader() {
   };
 
   return (
-    <header className="h-16 px-6 border-b border-gray-100 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between transition-all duration-200">
+    <header className="h-16 px-6 border-b border-gray-200/60 bg-white/80 backdrop-blur-xl sticky top-0 z-30 flex items-center justify-between transition-all duration-300 shadow-sm support-backdrop-blur:bg-white/60">
       
       {/* Left: Breadcrumbs / Context */}
-      <div className="flex items-center min-w-0">
-         <div className="flex items-center text-sm font-medium text-gray-500 dark:text-gray-400">
-            <Link href="/dashboard" className="hover:text-gray-900 dark:hover:text-gray-200 transition-colors flex items-center gap-1">
-              <span className="material-symbols-outlined text-lg">grid_view</span>
-            </Link>
-            
-            {currentRoute.section !== "Overview" && (
-              <>
-                <ChevronRight className="h-4 w-4 mx-2 text-gray-300" />
-                <span className="text-gray-900 dark:text-white font-semibold flex items-center gap-2">
-                   {currentRoute.title}
-                </span>
-              </>
-            )}
-         </div>
+      <div className="flex items-center min-w-0 gap-3">
+         <Link href="/dashboard" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100/80 transition-all text-gray-500 hover:text-gray-900 group">
+            <span className="material-symbols-outlined text-xl group-hover:scale-110 transition-transform text-gray-400 group-hover:text-gray-900">grid_view</span>
+         </Link>
+         
+         {currentRoute.section !== "Overview" && (
+           <>
+             <ChevronRight className="h-4 w-4 text-gray-300" strokeWidth={2} />
+             <div className="flex flex-col">
+               <span className="text-xs text-gray-400 font-medium">{currentRoute.section}</span>
+               <span className="text-gray-900 dark:text-white font-bold text-sm tracking-tight">
+                  {currentRoute.title}
+               </span>
+             </div>
+           </>
+         )}
       </div>
 
       {/* Right: Actions, Search, Profile */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-5">
         {/* Search Bar - Sleek Pill */}
         <div className="relative group hidden md:block">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-4 w-4 text-gray-400 group-hover:text-primary-creative transition-colors" />
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+             <Search className="h-4 w-4 text-gray-400 group-focus-within:text-purple-600 transition-colors" />
           </div>
           <input
             type="text"
             value={searchValue}
             onChange={(e) => handleSearch(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && executeSearch()}
-            placeholder="Search..."
-            className="block w-64 pl-10 pr-3 py-2 border-none rounded-full bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-creative/20 transition-all text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700/50"
+            placeholder="Search campaigns..."
+            className="block w-64 pl-10 pr-4 py-2 border border-gray-200/60 rounded-full bg-gray-50/50 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-200 focus:bg-white transition-all text-sm font-medium hover:bg-white hover:border-gray-300 hover:shadow-sm"
           />
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2 border-l border-gray-200 dark:border-gray-700 pl-4">
+        <div className="flex items-center gap-3 border-l border-gray-200/60 pl-5">
            {/* Notification Bell */}
-           <button className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors">
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-red-500 border border-white dark:border-gray-900"></span>
+           <button className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100/80 text-gray-500 hover:text-gray-900 transition-all hover:scale-105 active:scale-95 group">
+              <Bell className="h-5 w-5 group-hover:fill-current" strokeWidth={1.8} />
+              <span className="absolute top-2 right-2.5 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-white"></span>
            </button>
 
-           {/* Primary Action - Context Aware */}
+           {/* Primary Action - Gradient Button */}
            <Link 
               href="/dashboard/campaigns/new" 
-              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all shadow-sm hover:shadow-md bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+              className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold tracking-wide transition-all shadow-creative-md hover:shadow-creative-lg bg-linear-to-br from-gray-900 to-gray-800 text-white hover:scale-105 active:scale-95 border border-transparent hover:border-white/20"
             >
-              <Plus className="h-4 w-4" />
-              <span>New</span>
+              <Plus className="h-4 w-4" strokeWidth={2.5} />
+              <span>Create</span>
            </Link>
 
            {/* User Profile */}
-           <div className="pl-2">
+           <div className="pl-1">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="w-8 h-8 rounded-full bg-blue-500 border-2 border-white shadow-sm cursor-pointer flex items-center justify-center text-white font-medium text-xs hover:ring-2 hover:ring-blue-200 transition-all outline-none">
+                  <button className="w-9 h-9 rounded-full bg-linear-to-br from-purple-500 to-blue-600 border-2 border-white shadow-creative-sm cursor-pointer flex items-center justify-center text-white font-bold text-xs hover:ring-2 hover:ring-purple-100 transition-all outline-none hover:scale-105 active:scale-95">
                     JD
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem>
+                <DropdownMenuContent align="end" className="w-56 mt-2 p-1 border-gray-100 shadow-creative-lg rounded-xl">
+                  <DropdownMenuLabel className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">My Account</DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-gray-100 mx-2" />
+                  <DropdownMenuItem className="rounded-lg cursor-pointer focus:bg-purple-50 focus:text-purple-700 font-medium px-3 py-2">
                     <User className="mr-2 h-4 w-4" />
                     <span>Profile</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem className="rounded-lg cursor-pointer focus:bg-purple-50 focus:text-purple-700 font-medium px-3 py-2">
                     <CreditCard className="mr-2 h-4 w-4" />
                     <span>Billing</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem className="rounded-lg cursor-pointer focus:bg-purple-50 focus:text-purple-700 font-medium px-3 py-2">
                     <Settings className="mr-2 h-4 w-4" />
                     <span>Settings</span>
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-gray-100 mx-2" />
+                  <DropdownMenuItem className="rounded-lg cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700 font-medium px-3 py-2">
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>
                   </DropdownMenuItem>

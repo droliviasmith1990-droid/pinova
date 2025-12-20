@@ -36,24 +36,24 @@ export function RightPanel() {
             {/* Panel */}
             <aside
                 className={cn(
-                    "w-96 bg-white border-l border-gray-200 flex flex-col h-full transition-transform duration-300 ease-in-out",
+                    "w-96 bg-white/90 backdrop-blur-xl border-l border-white/40 flex flex-col h-full transition-transform duration-300 ease-in-out shadow-creative-lg z-30",
                     "lg:relative lg:translate-x-0 fixed z-40 right-0",
                     isPanelOpen ? "translate-x-0" : "translate-x-full"
                 )}
                 aria-label="Editor sidebar"
             >
                 {/* Tab Bar */}
-                <div className="h-12 flex border-b border-gray-200" role="tablist" aria-label="Editor panels">
+                <div className="h-14 flex items-center px-4 gap-2 border-b border-gray-100/50 bg-white/50 backdrop-blur-sm" role="tablist" aria-label="Editor panels">
                     <button
                         onClick={() => setActiveTab('properties')}
                         role="tab"
                         aria-selected={activeTab === 'properties'}
                         aria-controls="properties-panel"
                         className={cn(
-                            "flex-1 text-xs font-medium transition-all duration-150 border-b-2",
+                            "flex-1 py-2 text-xs font-semibold transition-all duration-200 rounded-lg",
                             activeTab === 'properties'
-                                ? "text-blue-600 border-blue-600 bg-blue-50/50"
-                                : "text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50"
+                                ? "bg-white text-blue-600 shadow-sm ring-1 ring-gray-100"
+                                : "text-gray-500 hover:text-gray-900 hover:bg-gray-100/50"
                         )}
                     >
                         Properties
@@ -64,10 +64,10 @@ export function RightPanel() {
                         aria-selected={activeTab === 'arrange'}
                         aria-controls="arrange-panel"
                         className={cn(
-                            "flex-1 text-xs font-medium transition-all duration-150 border-b-2",
+                            "flex-1 py-2 text-xs font-semibold transition-all duration-200 rounded-lg",
                             activeTab === 'arrange'
-                                ? "text-blue-600 border-blue-600 bg-blue-50/50"
-                                : "text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50"
+                                ? "bg-white text-blue-600 shadow-sm ring-1 ring-gray-100"
+                                : "text-gray-500 hover:text-gray-900 hover:bg-gray-100/50"
                         )}
                     >
                         Arrange
@@ -78,10 +78,10 @@ export function RightPanel() {
                         aria-selected={activeTab === 'layers'}
                         aria-controls="layers-panel"
                         className={cn(
-                            "flex-1 text-xs font-medium transition-all duration-150 border-b-2",
+                            "flex-1 py-2 text-xs font-semibold transition-all duration-200 rounded-lg",
                             activeTab === 'layers'
-                                ? "text-blue-600 border-blue-600 bg-blue-50/50"
-                                : "text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50"
+                                ? "bg-white text-blue-600 shadow-sm ring-1 ring-gray-100"
+                                : "text-gray-500 hover:text-gray-900 hover:bg-gray-100/50"
                         )}
                     >
                         Layers
@@ -92,10 +92,10 @@ export function RightPanel() {
                         aria-selected={activeTab === 'details'}
                         aria-controls="details-panel"
                         className={cn(
-                            "flex-1 text-xs font-medium transition-all duration-150 border-b-2",
+                            "flex-1 py-2 text-xs font-semibold transition-all duration-200 rounded-lg",
                             activeTab === 'details'
-                                ? "text-blue-600 border-blue-600 bg-blue-50/50"
-                                : "text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50"
+                                ? "bg-white text-blue-600 shadow-sm ring-1 ring-gray-100"
+                                : "text-gray-500 hover:text-gray-900 hover:bg-gray-100/50"
                         )}
                     >
                         Details

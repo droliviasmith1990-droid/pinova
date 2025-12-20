@@ -13,7 +13,8 @@ import {
     FileSpreadsheet,
     Table,
     FileText,
-    Link2
+    Link2,
+    Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCampaignWizard } from '@/lib/campaigns/CampaignWizardContext';
@@ -270,30 +271,31 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
         <div
             key={field.name}
             className={cn(
-                "bg-white border rounded-xl p-4 transition-all",
+                "group bg-surface-light border rounded-xl p-4 transition-all duration-300",
+                "hover:shadow-creative-sm",
                 isMapped(field.name)
-                    ? "border-green-300 bg-green-50/30"
+                    ? "border-green-200 bg-green-50/30"
                     : field.required
-                        ? "border-amber-300 bg-amber-50/30"
-                        : "border-gray-200"
+                        ? "border-amber-200 bg-amber-50/30 shadow-none"
+                        : "border-gray-200 hover:border-blue-200"
             )}
         >
             <div className="flex items-center justify-between gap-4">
                 {/* Status Icon */}
                 <div className={cn(
-                    "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                    "w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105",
                     isMapped(field.name) 
-                        ? "bg-green-100" 
+                        ? "bg-gradient-to-br from-green-400 to-emerald-500 text-white shadow-green-200" 
                         : field.required 
-                            ? "bg-amber-100" 
-                            : "bg-gray-100"
+                            ? "bg-white border-2 border-amber-300 text-amber-500" 
+                            : "bg-gray-100 text-gray-400"
                 )}>
                     {isMapped(field.name) ? (
-                        <Check className="w-4 h-4 text-green-600" />
+                        <Check className="w-5 h-5 stroke-[3]" />
                     ) : field.required ? (
-                        <AlertCircle className="w-4 h-4 text-amber-600" />
+                        <AlertCircle className="w-5 h-5" />
                     ) : (
-                        <div className="w-3 h-3 rounded-full border-2 border-gray-300" />
+                        <div className="w-2 h-2 rounded-full bg-gray-300" />
                     )}
                 </div>
                 
@@ -301,50 +303,50 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                         {field.type === 'image' ? (
-                            <ImageIcon className="w-4 h-4 text-green-600" />
+                            <ImageIcon className="w-4 h-4 text-primary-creative" />
                         ) : (
-                            <Type className="w-4 h-4 text-blue-600" />
+                            <Type className="w-4 h-4 text-accent-1" />
                         )}
-                        <span className="font-medium text-gray-900">
+                        <span className="font-heading font-semibold text-gray-900">
                             {field.name.replace(/(\d+)$/, ' $1').replace(/_/g, ' ')}
                         </span>
                         {field.required && (
-                            <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-medium">
-                                REQUIRED
+                            <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-bold uppercase tracking-wider">
+                                Required
                             </span>
                         )}
                     </div>
-                    <p className="text-sm text-gray-500 mt-0.5">
-                        Template field: <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">{`{{${field.name}}}`}</code>
+                    <p className="text-xs text-gray-500 mt-1 font-mono">
+                        {`{{${field.name}}}`}
                     </p>
                 </div>
 
                 {/* Column Dropdown */}
-                <div ref={openDropdown === field.name ? dropdownRef : null} className="relative w-48">
+                <div ref={openDropdown === field.name ? dropdownRef : null} className="relative w-56">
                     <button
                         type="button"
                         onClick={() => setOpenDropdown(openDropdown === field.name ? null : field.name)}
                         className={cn(
-                            "w-full flex items-center justify-between gap-2 px-3 py-2 border rounded-lg text-left text-sm transition-colors",
+                            "w-full flex items-center justify-between gap-2 px-4 py-2.5 border rounded-xl text-left text-sm transition-all",
                             isMapped(field.name)
-                                ? "border-green-300 bg-white"
+                                ? "border-green-200 bg-white text-gray-900 font-medium shadow-sm"
                                 : field.required
-                                    ? "border-amber-300 bg-white"
-                                    : "border-gray-300 bg-white hover:border-blue-400"
+                                    ? "border-amber-300 bg-white text-gray-700"
+                                    : "border-gray-200 bg-white text-gray-500 hover:border-primary-creative/50 hover:text-gray-900"
                         )}
                     >
-                        <span className={cn(
-                            "truncate",
-                            fieldMapping[field.name] ? "text-gray-900" : "text-gray-400"
-                        )}>
+                        <span className="truncate">
                             {fieldMapping[field.name] || 'Select column...'}
                         </span>
-                        <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+                        <ChevronDown className={cn(
+                            "w-4 h-4 transition-transform duration-200",
+                            openDropdown === field.name ? "rotate-180 text-primary-creative" : "text-gray-400"
+                        )} />
                     </button>
 
                     {/* Dropdown Menu */}
                     {openDropdown === field.name && (
-                        <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        <div className="absolute z-20 top-full left-0 right-0 mt-2 bg-white border border-gray-100 rounded-xl shadow-creative-lg max-h-56 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-200">
                             <button
                                 type="button"
                                 onMouseDown={(e) => {
@@ -352,9 +354,9 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                                     updateFieldMapping(field.name, '');
                                     setOpenDropdown(null);
                                 }}
-                                className="w-full px-3 py-2 text-left text-gray-400 hover:bg-gray-50 text-sm"
+                                className="w-full px-4 py-2.5 text-left text-gray-400 hover:bg-gray-50 text-xs uppercase tracking-wider font-bold"
                             >
-                                -- Clear selection --
+                                Clear selection
                             </button>
                             {csvData?.headers.map((header, idx) => (
                                 <button
@@ -366,8 +368,10 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                                         setOpenDropdown(null);
                                     }}
                                     className={cn(
-                                        "w-full px-3 py-2 text-left hover:bg-blue-50 text-sm flex items-center justify-between",
-                                        fieldMapping[field.name] === header && "bg-blue-50 text-blue-600"
+                                        "w-full px-4 py-2.5 text-left text-sm flex items-center justify-between transition-colors",
+                                        fieldMapping[field.name] === header 
+                                            ? "bg-primary-creative/5 text-primary-creative font-medium" 
+                                            : "hover:bg-gray-50 text-gray-700"
                                     )}
                                 >
                                     <span className="truncate">{header}</span>
@@ -384,7 +388,7 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                 {field.isAdditional && (
                     <button
                         onClick={() => handleDeleteField(field.name)}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-2.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all hover:scale-105"
                         title="Remove field"
                     >
                         <Trash2 className="w-4 h-4" />
@@ -394,19 +398,18 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
 
             {/* Preview */}
             {isMapped(field.name) && (
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                    <p className="text-sm text-gray-600">
-                        <span className="text-gray-400">Preview: </span>
+                <div className="mt-3 pt-3 border-t border-gray-100/50 flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wide text-gray-400 font-bold">Preview</span>
+                    <div className="text-sm px-2 py-1 bg-white/50 rounded-md border border-gray-100 max-w-full truncate text-gray-700">
                         {field.type === 'image' ? (
-                            <span className="text-blue-600 underline truncate block">
-                                {getPreviewValue(fieldMapping[field.name]) || <span className="italic text-gray-400">empty</span>}
+                            <span className="flex items-center gap-1.5 text-blue-600">
+                                <Link2 className="w-3 h-3" />
+                                {getPreviewValue(fieldMapping[field.name]) || 'empty'}
                             </span>
                         ) : (
-                            <span className="font-medium">
-                                {getPreviewValue(fieldMapping[field.name]) || <span className="italic text-gray-400">empty</span>}
-                            </span>
+                            getPreviewValue(fieldMapping[field.name]) || <span className="italic text-gray-400">empty</span>
                         )}
-                    </p>
+                    </div>
                 </div>
             )}
         </div>
@@ -414,96 +417,98 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
 
     return (
         <section className={cn(
-            "bg-white border border-gray-200 rounded-xl p-6 space-y-6",
-            "animate-in slide-in-from-bottom-4 duration-300",
+            "bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl p-8 space-y-8 shadow-creative-sm",
+            "animate-in slide-in-from-bottom-4 duration-500",
             className
         )}>
             {/* Section Header */}
-            <div>
-                <div className="flex items-center gap-2 mb-1">
-                    <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-                        <Link2 className="w-4 h-4 text-amber-600" />
+            <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-orange-500/20">
+                        <Link2 className="w-5 h-5 text-white" />
                     </div>
-                    <h2 className="text-lg font-semibold text-gray-900">Map Your Fields</h2>
-                    <div className="ml-auto text-sm text-gray-500">
-                        <span className="font-medium text-gray-900">{mappedCount}</span> of {allFields.length} mapped
+                    <div>
+                        <h2 className="font-heading font-semibold text-gray-900 text-lg">Map Variables</h2>
+                        <div className="text-sm text-gray-500 font-medium mt-0.5">
+                            <span className={cn(
+                                "font-bold",
+                                mappedCount === allFields.length ? "text-green-600" : "text-primary-creative"
+                            )}>{mappedCount}</span>
+                            <span className="text-gray-400 mx-1">/</span>
+                            {allFields.length} fields mapped
+                        </div>
                     </div>
                 </div>
-                <p className="text-gray-600 text-sm">
-                    Connect each template field to a column from your CSV file.
-                </p>
+                
+                {requiredUnmapped.length > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 rounded-full border border-amber-100">
+                        <AlertCircle className="w-4 h-4 text-amber-500" />
+                        <span className="text-xs font-semibold text-amber-700">Action Required</span>
+                    </div>
+                )}
             </div>
 
             {/* Info Banner */}
-            <div className="flex items-start gap-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                    <Info className="w-5 h-5 text-blue-600" />
-                </div>
-                <div className="space-y-1">
-                    <p className="font-medium text-blue-900">How Field Mapping Works</p>
-                    <p className="text-sm text-blue-700">
-                        Template fields like <code className="bg-blue-100 px-1 rounded">{"{{text1}}"}</code> are placeholders in your design.
-                        Connect them to CSV columns to replace placeholders with real data for each pin.
-                    </p>
-                    <div className="flex items-center gap-2 mt-2 text-xs text-blue-600">
-                        <span className="px-2 py-0.5 bg-white rounded border border-blue-200">Template Field</span>
-                        <span>→</span>
-                        <span className="px-2 py-0.5 bg-white rounded border border-blue-200">CSV Column</span>
-                        <span>=</span>
-                        <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded border border-green-200">Data in Pin</span>
+            <div className="relative overflow-hidden p-0 rounded-xl bg-gradient-to-r from-blue-500/5 to-purple-500/5 border border-blue-100/50">
+                 <div className="p-5 flex items-start gap-4">
+                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm text-primary-creative">
+                        <Info className="w-4 h-4" />
+                    </div>
+                    <div className="space-y-2">
+                        <p className="font-semibold text-gray-900 text-sm">Mapping Guide</p>
+                        <p className="text-xs text-gray-500 leading-relaxed max-w-xl">
+                            Connect your spreadsheet headers to the design template variables. 
+                            For example, map the <code className="bg-white px-1.5 py-0.5 rounded border border-gray-200 font-mono text-gray-700">{'{{ProductName}}'}</code> variable 
+                            to your CSV&apos;s &quot;Product Title&quot; column.
+                        </p>
                     </div>
                 </div>
             </div>
 
             {/* CSV Preview Card */}
             {csvData && (
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                    <div className="flex items-start justify-between gap-4 mb-3">
+                <div className="bg-surface-light border border-gray-100 rounded-xl p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-4 mb-4">
                         <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-green-500 flex items-center justify-center shrink-0">
+                            <div className="w-10 h-10 rounded-xl bg-green-500 flex items-center justify-center shrink-0 shadow-sm">
                                 <FileSpreadsheet className="w-5 h-5 text-white" />
                             </div>
                             <div>
                                 <div className="flex items-center gap-2">
-                                    <span className="font-medium text-gray-900">{csvData.fileName}</span>
-                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">
-                                        <Check className="w-3 h-3" />
-                                        Valid
+                                    <span className="font-bold text-gray-900">{csvData.fileName}</span>
+                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold uppercase tracking-wide rounded-full">
+                                        Active Source
                                     </span>
                                 </div>
-                                <p className="text-xs text-gray-500 mt-1">
-                                    Your CSV file should have columns for each variable field in your template
-                                </p>
+                                <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                                    <span className="flex items-center gap-1">
+                                        <Table className="w-3 h-3" /> {csvData.rowCount} rows
+                                    </span>
+                                    <span className="w-1 h-1 rounded-full bg-gray-300" />
+                                    <span className="flex items-center gap-1">
+                                        <FileText className="w-3 h-3" /> {csvData.headers.length} columns
+                                    </span>
+                                </div>
                             </div>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
-                            <span className="flex items-center gap-1">
-                                <Table className="w-4 h-4 text-gray-400" />
-                                <strong>{csvData.rowCount}</strong> rows
-                            </span>
-                            <span className="flex items-center gap-1">
-                                <FileText className="w-4 h-4 text-gray-400" />
-                                <strong>{csvData.headers.length}</strong> columns
-                            </span>
                         </div>
                     </div>
 
                     {/* Column Pills */}
-                    <div className="flex flex-wrap gap-1.5">
-                        {csvData.headers.slice(0, showColumns ? undefined : 5).map((header, i) => (
+                    <div className="flex flex-wrap gap-2">
+                        {csvData.headers.slice(0, showColumns ? undefined : 8).map((header, i) => (
                             <span
                                 key={i}
-                                className="px-2 py-0.5 bg-white border border-gray-200 rounded text-xs text-gray-600"
+                                className="px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 shadow-sm"
                             >
                                 {header}
                             </span>
                         ))}
-                        {csvData.headers.length > 5 && !showColumns && (
+                        {csvData.headers.length > 8 && !showColumns && (
                             <button
                                 onClick={() => setShowColumns(true)}
-                                className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-500 hover:bg-gray-200"
+                                className="px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-semibold text-gray-500 hover:bg-gray-200 transition-colors"
                             >
-                                +{csvData.headers.length - 5} more
+                                +{csvData.headers.length - 8} more
                             </button>
                         )}
                     </div>
@@ -512,31 +517,34 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
 
             {/* Loading State */}
             {isLoading ? (
-                <div className="text-center py-8 text-gray-500">Loading template fields...</div>
+                <div className="text-center py-12">
+                    <Loader2 className="w-8 h-8 text-primary-creative animate-spin mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">Scanning template for variables...</p>
+                </div>
             ) : allFields.length === 0 ? (
                 // No fields state
-                <div className="text-center py-8">
-                    <div className="flex items-center justify-center gap-2 text-gray-500 mb-4">
-                        <Info className="w-5 h-5" />
-                        <span>No dynamic fields found in template</span>
+                <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
+                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Type className="w-6 h-6 text-gray-300" />
                     </div>
-                    <p className="text-sm text-gray-400 mb-4">
-                        Add fields below to map CSV columns to your pins.
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1">No dynamic fields detected</h3>
+                    <p className="text-xs text-gray-500 mb-6 max-w-xs mx-auto">
+                        This template doesn&apos;t seem to have any named variables. You can manually add fields below.
                     </p>
                     <div className="flex justify-center gap-3">
                         <button
                             onClick={handleAddTextField}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all text-sm font-medium shadow-sm"
                         >
                             <Plus className="w-4 h-4" />
-                            Add Text Field
+                            Add Text Variable
                         </button>
                         <button
                             onClick={handleAddImageField}
-                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all text-sm font-medium shadow-sm"
                         >
                             <Plus className="w-4 h-4" />
-                            Add Image Field
+                            Add Image Variable
                         </button>
                     </div>
                 </div>
@@ -544,15 +552,14 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                 <>
                     {/* Image Fields */}
                     {imageFields.length > 0 && (
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                                <h3 className="font-medium text-gray-700 flex items-center gap-2 text-sm uppercase tracking-wide">
-                                    <ImageIcon className="w-4 h-4 text-green-600" />
-                                    Image Fields
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
+                                <ImageIcon className="w-4 h-4 text-gray-400" />
+                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                                    Image Variables
                                 </h3>
-                                <span className="text-xs text-gray-500">{imageFields.length} Fields</span>
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                                 {imageFields.map(renderFieldRow)}
                             </div>
                         </div>
@@ -560,50 +567,28 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
 
                     {/* Text Fields */}
                     {textFields.length > 0 && (
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                                <h3 className="font-medium text-gray-700 flex items-center gap-2 text-sm uppercase tracking-wide">
-                                    <Type className="w-4 h-4 text-blue-600" />
-                                    Text Fields
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
+                                <Type className="w-4 h-4 text-gray-400" />
+                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                                    Text Variables
                                 </h3>
-                                <span className="text-xs text-gray-500">{textFields.length} Fields</span>
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                                 {textFields.map(renderFieldRow)}
                             </div>
                         </div>
                     )}
-
-                    {/* Add Field Buttons */}
-                    <div className="flex gap-3">
-                        <button
-                            onClick={handleAddImageField}
-                            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 hover:border-green-400 hover:text-green-600 hover:bg-green-50/50 transition-colors"
-                        >
-                            <Plus className="w-4 h-4" />
-                            Add Image Field
+                    
+                    {/* Manual Add Buttons */}
+                     <div className="flex items-center justify-center gap-4 pt-4 opacity-0 hover:opacity-100 transition-opacity duration-300">
+                        <button onClick={handleAddTextField} className="text-xs text-gray-400 hover:text-primary-creative flex items-center gap-1 transition-colors">
+                            <Plus className="w-3 h-3" /> Add Text Field
                         </button>
-                        <button
-                            onClick={handleAddTextField}
-                            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors"
-                        >
-                            <Plus className="w-4 h-4" />
-                            Add Text Field
+                         <button onClick={handleAddImageField} className="text-xs text-gray-400 hover:text-green-600 flex items-center gap-1 transition-colors">
+                            <Plus className="w-3 h-3" /> Add Image Field
                         </button>
-                    </div>
-
-                    {/* Validation Error Card */}
-                    {requiredUnmapped.length > 0 && (
-                        <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                            <div>
-                                <p className="font-medium text-amber-800">Missing Required Fields</p>
-                                <p className="text-sm text-amber-700 mt-1">
-                                    Please map: {requiredUnmapped.map((f: DynamicField) => f.name).join(', ')}
-                                </p>
-                            </div>
-                        </div>
-                    )}
+                     </div>
                 </>
             )}
         </section>

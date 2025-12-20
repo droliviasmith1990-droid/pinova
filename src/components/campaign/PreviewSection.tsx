@@ -163,7 +163,7 @@ function WarningItem({ warning }: { warning: ValidationWarning }) {
             "flex items-start gap-2 p-2 rounded-lg border text-sm",
             styles[warning.severity]
         )}>
-            <div className="flex-shrink-0 mt-0.5">{icons[warning.severity]}</div>
+            <div className="shrink-0 mt-0.5">{icons[warning.severity]}</div>
             <span>{warning.message}</span>
         </div>
     );
@@ -260,10 +260,10 @@ export function PreviewSection({ className }: PreviewSectionProps) {
     // Show loading state while template loads
     if (templateLoading) {
         return (
-            <div className={cn("bg-white border border-gray-200 rounded-xl p-6", className)}>
+            <div className={cn("bg-white/50 backdrop-blur-sm border border-white/40 rounded-2xl p-6 shadow-creative-sm", className)}>
                 <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 text-blue-500 animate-spin mr-2" />
-                    <span className="text-gray-600">Loading template for preview...</span>
+                    <Loader2 className="w-6 h-6 text-primary-creative animate-spin mr-2" />
+                    <span className="text-gray-600 font-medium">Loading template for preview...</span>
                 </div>
             </div>
         );
@@ -278,35 +278,35 @@ export function PreviewSection({ className }: PreviewSectionProps) {
     const totalCount = previewPins.length;
     
     return (
-        <div className={cn("bg-white border border-gray-200 rounded-xl overflow-hidden", className)}>
+        <div className={cn("bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl overflow-hidden shadow-creative-sm transition-all duration-300 hover:shadow-creative-md", className)}>
             {/* Header */}
             <div 
-                className="flex items-center justify-between px-6 py-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
+                className="flex items-center justify-between px-6 py-5 border-b border-gray-100/50 cursor-pointer hover:bg-white/40 transition-colors"
                 onClick={() => setIsExpanded(!isExpanded)}
             >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                     <div className={cn(
-                        "p-2 rounded-lg",
-                        previewStatus === 'ready' ? 'bg-green-100' :
-                        previewStatus === 'error' ? 'bg-red-100' :
-                        previewStatus === 'generating' ? 'bg-blue-100' :
-                        'bg-gray-100'
+                        "p-2.5 rounded-xl shadow-inner transition-colors",
+                        previewStatus === 'ready' ? 'bg-linear-to-br from-green-50 to-green-100 text-green-600' :
+                        previewStatus === 'error' ? 'bg-linear-to-br from-red-50 to-red-100 text-red-600' :
+                        previewStatus === 'generating' ? 'bg-linear-to-br from-blue-50 to-blue-100 text-blue-600' :
+                        'bg-gray-100 text-gray-500'
                     )}>
                         {previewStatus === 'generating' ? (
-                            <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                            <Loader2 className="w-5 h-5 animate-spin" />
                         ) : previewStatus === 'ready' ? (
-                            <CheckCircle className="w-5 h-5 text-green-600" />
+                            <CheckCircle className="w-5 h-5" />
                         ) : previewStatus === 'error' ? (
-                            <XCircle className="w-5 h-5 text-red-600" />
+                            <XCircle className="w-5 h-5" />
                         ) : (
-                            <Eye className="w-5 h-5 text-gray-600" />
+                            <Eye className="w-5 h-5" />
                         )}
                     </div>
                     <div>
-                        <h3 className="font-semibold text-gray-900">
+                        <h3 className="font-heading font-semibold text-gray-900 text-lg">
                             Preview Samples
                         </h3>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-gray-500 font-medium mt-0.5">
                             {isGenerating 
                                 ? `Generating ${progress} of ${totalCount} previews...`
                                 : previewStatus === 'ready'
@@ -319,23 +319,23 @@ export function PreviewSection({ className }: PreviewSectionProps) {
                     </div>
                 </div>
                 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                     {/* Validation summary */}
                     {previewStatus === 'ready' && (
                         <div className="flex items-center gap-2 mr-4">
                             {totalErrors > 0 ? (
-                                <div className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-full text-sm">
-                                    <XCircle className="w-4 h-4" />
+                                <div className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-700 border border-red-100 rounded-full text-xs font-semibold shadow-sm">
+                                    <XCircle className="w-3.5 h-3.5" />
                                     <span>{totalErrors} error{totalErrors > 1 ? 's' : ''}</span>
                                 </div>
                             ) : totalWarnings > 0 ? (
-                                <div className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-sm">
-                                    <AlertTriangle className="w-4 h-4" />
+                                <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-700 border border-amber-100 rounded-full text-xs font-semibold shadow-sm">
+                                    <AlertTriangle className="w-3.5 h-3.5" />
                                     <span>{totalWarnings} warning{totalWarnings > 1 ? 's' : ''}</span>
                                 </div>
                             ) : (
-                                <div className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-sm">
-                                    <CheckCircle className="w-4 h-4" />
+                                <div className="flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-700 border border-green-100 rounded-full text-xs font-semibold shadow-sm">
+                                    <CheckCircle className="w-3.5 h-3.5" />
                                     <span>All valid</span>
                                 </div>
                             )}
@@ -349,7 +349,7 @@ export function PreviewSection({ className }: PreviewSectionProps) {
                                 e.stopPropagation();
                                 regenerate();
                             }}
-                            className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-600 bg-white border border-gray-200 hover:text-primary-creative hover:border-primary-creative/30 hover:bg-primary-creative/5 rounded-lg transition-all shadow-sm hover:shadow-md"
                         >
                             <RefreshCw className="w-4 h-4" />
                             Regenerate
@@ -357,25 +357,27 @@ export function PreviewSection({ className }: PreviewSectionProps) {
                     )}
                     
                     {/* Expand/Collapse */}
-                    {isExpanded ? (
-                        <ChevronUp className="w-5 h-5 text-gray-400" />
-                    ) : (
-                        <ChevronDown className="w-5 h-5 text-gray-400" />
-                    )}
+                    <div className="p-2 bg-gray-50 rounded-lg text-gray-400 group-hover:bg-white group-hover:text-primary-creative transition-colors">
+                        {isExpanded ? (
+                            <ChevronUp className="w-5 h-5" />
+                        ) : (
+                            <ChevronDown className="w-5 h-5" />
+                        )}
+                    </div>
                 </div>
             </div>
             
             {/* Content */}
             {isExpanded && (
-                <div className="p-6">
+                <div className="p-6 bg-surface-light/50">
                     {/* Error State */}
                     {error && (
-                        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                            <div className="flex items-center gap-2 text-red-700">
+                        <div className="mb-6 p-4 bg-red-50/50 border border-red-200/60 rounded-xl backdrop-blur-sm">
+                            <div className="flex items-center gap-2 text-red-700 mb-1">
                                 <XCircle className="w-5 h-5" />
-                                <span className="font-medium">Preview Generation Failed</span>
+                                <span className="font-semibold">Preview Generation Failed</span>
                             </div>
-                            <p className="mt-1 text-sm text-red-600">{error}</p>
+                            <p className="ml-7 text-sm text-red-600/90">{error}</p>
                         </div>
                     )}
                     
@@ -387,19 +389,19 @@ export function PreviewSection({ className }: PreviewSectionProps) {
                     
                     {/* Field Mapping Summary */}
                     {Object.keys(fieldMapping).length > 0 && (
-                        <div className="mt-6 pt-6 border-t border-gray-100">
-                            <h4 className="text-sm font-medium text-gray-700 mb-3">
+                        <div className="mt-8 pt-6 border-t border-gray-200/60">
+                            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">
                                 Field Mapping Used
                             </h4>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-3">
                                 {Object.entries(fieldMapping).map(([templateField, csvColumn]) => (
                                     <div 
                                         key={templateField}
-                                        className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-xs"
+                                        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200/60 rounded-lg text-xs shadow-sm"
                                     >
-                                        <span className="font-medium text-gray-700">{templateField}</span>
-                                        <span className="text-gray-400">→</span>
-                                        <span className="text-gray-600">{csvColumn}</span>
+                                        <span className="font-bold text-gray-700">{templateField}</span>
+                                        <span className="text-gray-300">→</span>
+                                        <span className="font-medium text-primary-creative bg-primary-creative/5 px-1.5 py-0.5 rounded">{csvColumn}</span>
                                     </div>
                                 ))}
                             </div>
@@ -408,16 +410,18 @@ export function PreviewSection({ className }: PreviewSectionProps) {
                     
                     {/* Info about upcoming generation */}
                     {previewStatus === 'ready' && (
-                        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="mt-6 p-4 bg-blue-50/50 border border-blue-200/60 rounded-xl backdrop-blur-sm">
                             <div className="flex items-start gap-3">
-                                <Eye className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                                <div className="p-2 bg-blue-100/50 rounded-lg text-blue-600">
+                                     <Eye className="w-5 h-5 shrink-0" />
+                                </div>
                                 <div>
-                                    <p className="text-sm text-blue-800 font-medium">
+                                    <p className="text-sm text-blue-900 font-bold">
                                         Ready to generate {csvData.rowCount.toLocaleString()} pins
                                     </p>
-                                    <p className="text-sm text-blue-600 mt-1">
+                                    <p className="text-sm text-blue-700 mt-1 leading-relaxed">
                                         These previews show how your first 5 pins will look. 
-                                        Click &quot;Create Campaign&quot; below to generate all pins.
+                                        Click <span className="font-semibold">"Create Campaign"</span> below to generate all pins.
                                     </p>
                                 </div>
                             </div>

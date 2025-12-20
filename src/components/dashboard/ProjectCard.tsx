@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { DashboardProject } from "@/lib/db/dashboard";
 
 const PROJECT_VARIANTS: Record<string, any> = {
   blue: {
@@ -48,23 +49,14 @@ const PROJECT_VARIANTS: Record<string, any> = {
   }
 };
 
-export interface ProjectData {
-  id: string;
-  title: string;
-  status: string;
-  progress: number;
-  generated: number;
-  total: number;
-  color: string;
-  icon: string;
-}
-
-export function ProjectCard({ project }: { project: ProjectData }) {
+export function ProjectCard({ project }: { project: DashboardProject }) {
   const statusConfig: Record<string, { text: string, icon: string }> = {
     completed: { text: "Completed", icon: "check_circle" },
     in_progress: { text: "In Progress", icon: "play_arrow" },
     pending: { text: "Pending", icon: "pause" },
-    paused: { text: "Paused", icon: "error" }
+    paused: { text: "Paused", icon: "error" },
+    failed: { text: "Failed", icon: "warning" },
+    draft: { text: "Draft", icon: "edit_document" }
   };
 
   const statusInfo = statusConfig[project.status] || { text: project.status, icon: "info" };
@@ -87,7 +79,7 @@ export function ProjectCard({ project }: { project: ProjectData }) {
               <span className="material-symbols-outlined text-3xl">{project.icon}</span>
             </div>
             <div>
-              <h4 className="text-lg font-heading font-bold text-gray-900 dark:text-white">{project.title}</h4>
+              <h4 className="text-lg font-heading font-bold text-gray-900 dark:text-white">{project.name}</h4>
               <p className={cn("text-sm flex items-center mt-1", styles.statusText)}>
                 <span className="material-symbols-outlined text-base mr-1">{statusInfo.icon}</span> {statusInfo.text}
               </p>
@@ -104,7 +96,7 @@ export function ProjectCard({ project }: { project: ProjectData }) {
         </div>
 
         <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400 pt-3 border-t border-gray-100 dark:border-gray-700">
-          <span className="font-body"><strong className="text-gray-900 dark:text-gray-200">{project.generated}</strong> of {project.total} pins</span>
+          <span className="font-body"><strong className="text-gray-900 dark:text-gray-200">{project.generated_pins}</strong> of {project.total_pins} pins</span>
           <span className="material-symbols-outlined text-lg cursor-pointer hover:text-primary-creative dark:hover:text-accent-1 transition-colors">arrow_right_alt</span>
         </div>
       </div>

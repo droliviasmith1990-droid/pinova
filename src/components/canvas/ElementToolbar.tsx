@@ -103,37 +103,37 @@ export function ElementToolbar({
 
 
     const buttonClass = `
-        w-8 h-8 rounded-md flex items-center justify-center
-        transition-all duration-150 ease-out
-        hover:bg-gray-100 active:scale-95
+        w-9 h-9 rounded-lg flex items-center justify-center
+        transition-all duration-200 ease-out
+        hover:bg-gray-100/80 active:scale-95
         text-gray-600 hover:text-gray-900
     `;
 
     const lockedButtonClass = `
-        w-8 h-8 rounded-md flex items-center justify-center
-        transition-all duration-150 ease-out
+        w-9 h-9 rounded-lg flex items-center justify-center
+        transition-all duration-200 ease-out
         active:scale-95
         ${isLocked
-            ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-            : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
+            ? 'bg-blue-50 text-blue-600 hover:bg-blue-100 ring-1 ring-blue-200'
+            : 'hover:bg-gray-100/80 text-gray-600 hover:text-gray-900'
         }
     `;
 
     const dynamicButtonClass = `
-        w-8 h-8 rounded-md flex items-center justify-center
-        transition-all duration-150 ease-out
+        w-9 h-9 rounded-lg flex items-center justify-center
+        transition-all duration-200 ease-out
         active:scale-95
         ${isDynamic
-            ? 'bg-purple-50 text-purple-600 hover:bg-purple-100'
-            : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
+            ? 'bg-purple-50 text-purple-600 hover:bg-purple-100 ring-1 ring-purple-200'
+            : 'hover:bg-gray-100/80 text-gray-600 hover:text-gray-900'
         }
     `;
 
     const deleteButtonClass = `
-        w-8 h-8 rounded-md flex items-center justify-center
-        transition-all duration-150 ease-out
+        w-9 h-9 rounded-lg flex items-center justify-center
+        transition-all duration-200 ease-out
         active:scale-95
-        text-gray-600 hover:bg-red-50 hover:text-red-600
+        text-gray-600 hover:bg-red-50 hover:text-red-600 hover:ring-1 hover:ring-red-200
     `;
 
     const handleStartEdit = () => {
@@ -169,7 +169,7 @@ export function ElementToolbar({
 
     return (
         <div style={style}>
-            <div className="bg-white rounded-[10px] shadow-[0_4px_12px_rgba(0,0,0,0.1)] border border-gray-200/80 flex items-center gap-1 p-1 relative">
+            <div className="bg-white/95 backdrop-blur-xl rounded-xl shadow-creative-lg border border-white/50 flex items-center gap-1.5 p-1.5 relative ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-200">
                 {/* Rename Input */}
                 {isEditing ? (
                     <div className="relative">
@@ -179,15 +179,15 @@ export function ElementToolbar({
                             onChange={(e) => setEditValue(e.target.value)}
                             onBlur={handleFinishEdit}
                             onKeyDown={handleKeyDown}
-                            className={`h-7 px-2 text-sm rounded-md focus:outline-none focus:ring-2 min-w-[80px] ${
+                            className={`h-8 px-3 text-sm rounded-lg focus:outline-none focus:ring-2 min-w-[120px] shadow-sm transition-all ${
                                 isDuplicateName 
-                                    ? 'border-2 border-amber-400 focus:ring-amber-400' 
-                                    : 'border border-blue-400 focus:ring-blue-500'
+                                    ? 'border-2 border-amber-400 focus:ring-amber-400 bg-amber-50' 
+                                    : 'border border-blue-200 focus:ring-blue-500 bg-white'
                             }`}
                             autoFocus
                         />
                         {isDuplicateName && (
-                            <div className="absolute -top-8 left-0 right-0 flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-2 py-1 rounded border border-amber-200 whitespace-nowrap">
+                            <div className="absolute -top-10 left-0 flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-2 py-1.5 rounded-lg border border-amber-200 whitespace-nowrap shadow-sm">
                                 <AlertTriangle size={12} />
                                 Name already exists
                             </div>
@@ -196,12 +196,14 @@ export function ElementToolbar({
                 ) : (
                     <button
                         onClick={handleStartEdit}
-                        className="h-7 px-3 text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors border border-gray-200"
+                        className="h-9 px-3 text-sm font-medium text-gray-700 hover:bg-gray-100/80 rounded-lg transition-colors border border-transparent hover:border-gray-200/60 truncate max-w-[150px]"
                         title="Click to rename"
                     >
                         {elementName}
                     </button>
                 )}
+
+                <div className="w-px h-5 bg-gray-200 mx-0.5" />
 
                 {/* Dynamic Data Button - Only for image/text */}
                 {showDynamicButton && (
@@ -213,7 +215,7 @@ export function ElementToolbar({
                             aria-label="Configure dynamic field"
                             aria-pressed={isDynamic}
                         >
-                            <Zap size={18} strokeWidth={2} />
+                            <Zap size={18} strokeWidth={isDynamic ? 2.5 : 2} className={isDynamic ? "fill-purple-100" : ""} />
                         </button>
                         
                         <DynamicFieldPopup
@@ -236,7 +238,7 @@ export function ElementToolbar({
                     aria-label={isLocked ? "Unlock element" : "Lock element"}
                     aria-pressed={isLocked}
                 >
-                    <Lock size={18} strokeWidth={2} />
+                    <Lock size={18} strokeWidth={isLocked ? 2.5 : 2} className={isLocked ? "fill-blue-100" : ""} />
                 </button>
 
                 {/* Duplicate */}

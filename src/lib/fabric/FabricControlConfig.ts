@@ -11,21 +11,22 @@ export const SELECTION_COLORS = {
     // Active selection (clicked)
     activeBorder: '#8B5CF6',      // Vivid purple
     activeHandle: '#FFFFFF',       // White fill
-    activeHandleBorder: '#8B5CF6', // Purple border
+    activeHandleBorder: '#7C3AED', // Violet-600 (darker border for contrast)
 
     // Hover preview (mouse over)
     hoverBorder: '#C4B5FD',        // Light purple/lavender
 
     // Rotate handle
     rotateBorder: '#8B5CF6',
-    rotateBackground: '#FFFFFF',
+    rotateBackground: '#F5F3FF',   // Very light purple bg
 };
 
 // Handle sizes
 export const CONTROL_SIZES = {
-    cornerSize: 12,           // Corner handle diameter
+    cornerSize: 10,           // Sleeker handles
+    touchCornerSize: 24,      // Larger hit area for easier grabbing
     transparentCorners: false,
-    borderWidth: 3,           // Selection border thickness
+    borderWidth: 2,           // Thinner, more precise border
     padding: 0,               // Padding around selection
 };
 
@@ -34,7 +35,7 @@ export const ROTATION_CONFIG = {
     /** Snap angle in degrees (hold Shift to snap to multiples of this) */
     snapAngle: 15,
     /** Offset from object for rotation handle */
-    handleOffset: -30,
+    handleOffset: -40, // Slightly further out
 };
 
 /**
@@ -52,6 +53,7 @@ export function applyCanvaStyleControls(canvas: fabric.Canvas) {
         cornerColor: SELECTION_COLORS.activeHandle,
         cornerStrokeColor: SELECTION_COLORS.activeHandleBorder,
         cornerSize: CONTROL_SIZES.cornerSize,
+        touchCornerSize: CONTROL_SIZES.touchCornerSize, // Larger hit area
         cornerStyle: 'circle',  // Circular handles like Canva
         transparentCorners: CONTROL_SIZES.transparentCorners,
 
@@ -140,6 +142,7 @@ export function applyCanvaStyleControls(canvas: fabric.Canvas) {
             cornerColor: SELECTION_COLORS.activeHandle,
             cornerStrokeColor: SELECTION_COLORS.activeHandleBorder,
             cornerSize: CONTROL_SIZES.cornerSize,
+            touchCornerSize: CONTROL_SIZES.touchCornerSize,
             cornerStyle: 'circle',
             transparentCorners: CONTROL_SIZES.transparentCorners,
             padding: CONTROL_SIZES.padding,

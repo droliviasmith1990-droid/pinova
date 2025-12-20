@@ -88,16 +88,16 @@ export function FormActions({ className }: FormActionsProps) {
 
     return (
         <div className={cn(
-            "flex items-center justify-between pt-6 mt-6 border-t border-gray-200",
+            "sticky bottom-6 z-40 bg-white/80 backdrop-blur-md rounded-2xl shadow-creative-lg border border-white/40 p-4 mt-8 flex items-center justify-between animate-in slide-in-from-bottom-6 duration-500",
             className
         )}>
             {/* Back Button */}
             <button
                 onClick={handleBack}
                 disabled={isSubmitting}
-                className="flex items-center gap-2 px-4 py-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 px-5 py-2.5 text-gray-600 font-medium hover:text-gray-900 hover:bg-white/50 rounded-xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
             >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-5 h-5" />
                 Back to Dashboard
             </button>
 
@@ -106,21 +106,28 @@ export function FormActions({ className }: FormActionsProps) {
                 onClick={handleSubmit}
                 disabled={!canSubmit}
                 className={cn(
-                    "flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all",
+                    "relative overflow-hidden group flex items-center gap-3 px-8 py-3 rounded-xl font-bold shadow-lg transition-all duration-300 transform",
                     canSubmit
-                        ? "bg-blue-600 text-white hover:bg-blue-700 shadow-sm hover:shadow-md"
-                        : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                        ? "bg-gradient-to-r from-primary-creative to-accent-1 text-white hover:shadow-primary-creative/30 hover:scale-105 active:scale-95"
+                        : "bg-gray-100 text-gray-400 cursor-not-allowed shadow-none"
                 )}
             >
+                {/* Shine effect */}
+                {canSubmit && !isSubmitting && (
+                    <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent z-10" />
+                )}
+
                 {isSubmitting ? (
                     <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Creating...
+                        <Loader2 className="w-5 h-5 animate-spin relative z-20" />
+                        <span className="relative z-20">Creating Campaign...</span>
                     </>
                 ) : (
                     <>
-                        Create Campaign
-                        <Rocket className="w-4 h-4" />
+                        <span className="relative z-20">Create Campaign</span>
+                        <div className="relative z-20 p-1 bg-white/20 rounded-lg group-hover:rotate-12 transition-transform duration-300">
+                             <Rocket className="w-4 h-4 fill-current" />
+                        </div>
                     </>
                 )}
             </button>
