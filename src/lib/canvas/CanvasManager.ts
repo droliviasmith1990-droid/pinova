@@ -5,6 +5,7 @@ import { AlignmentGuides } from '../fabric/AlignmentGuides';
 import { SnappingSettings } from '@/stores/snappingSettingsStore';
 import { SpatialHashGrid } from './SpatialHashGrid';
 import { applyCanvaStyleControls } from '@/lib/fabric/FabricControlConfig';
+import { useElementsStore } from '@/stores/elementsStore';
 
 // Import from new modules
 import {
@@ -260,14 +261,14 @@ export class CanvasManager {
             // Load image asynchronously and replace placeholder
             loadFabricImage(imageUrl, imageElement).then((img) => {
                 if (img && this.canvas) {
-                    // Get placeholder to transfer metadata
+                    // Get placeholder to transfer our custom metadata (NOT the internal _element!)
                     const placeholder = this.elementMap.get(element.id);
                     
-                    // CRITICAL FIX: Transfer _element metadata from placeholder to loaded image
-                    // This preserves dynamicSource, isDynamic, and all other metadata
-                    if (placeholder && (placeholder as any)._element) {
-                        (img as any)._element = (placeholder as any)._element;
-                        console.log('[CanvasManager] Transferred metadata to loaded image:', element.id);
+                    // CRITICAL FIX: Only transfer OUR custom _elementData, not Fabric's internal _element
+                    // Fabric.js 6.x uses _element internally for the HTMLImageElement source
+                    // Overwriting it would break image rendering!
+                    if (placeholder && (placeholder as any)._elementData) {
+                        (img as any)._elementData = (placeholder as any)._elementData;
                     }
                     
                     if (placeholder) {
@@ -277,9 +278,13 @@ export class CanvasManager {
                     // Add loaded image
                     this.canvas.add(img);
                     this.elementMap.set(element.id, img);
+                    
+                    // CRITICAL FIX: Re-order all elements after async image load
+                    // canvas.add() places new objects at top, breaking z-order
+                    const allElements = useElementsStore.getState().elements;
+                    this.reorderElementsByZIndex(allElements);
+                    
                     this.debouncedRender();
-
-                    console.log('[CanvasManager] Image replaced placeholder:', element.id);
                 }
             }).catch((err) => {
                 console.error('[CanvasManager] Async image load failed:', element.id, err);
@@ -387,6 +392,10 @@ export class CanvasManager {
                 this.addElement(element);
             }
         }
+
+        // CRITICAL FIX: Re-order elements by zIndex after all elements are added
+        // This ensures Fabric.js render order matches the intended layer order
+        this.reorderElementsByZIndex(elements);
 
         // Re-apply Canva-style controls to all objects after replacement
         applyCanvaStyleControls(this.canvas);

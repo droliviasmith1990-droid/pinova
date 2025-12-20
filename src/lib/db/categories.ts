@@ -27,7 +27,7 @@ export interface CreateCategoryData {
  * @param name - The name to convert
  * @returns URL-friendly slug (lowercase, hyphens for spaces)
  */
-export function generateSlug(name: string): string {
+function generateSlug(name: string): string {
     return name
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')  // Replace non-alphanumeric with hyphens

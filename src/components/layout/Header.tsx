@@ -2,11 +2,11 @@
 
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Save, Upload, User, LogOut } from 'lucide-react';
+import { Save, Upload } from 'lucide-react';
 import { useTemplateStore } from '@/stores/templateStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useElementsStore } from '@/stores/elementsStore';
-import { useEditorStore } from '@/stores/editorStore'; // Keep for previewMode, loadTemplate
+import { useEditorStore } from '@/stores/editorStore';
 import { useStageRef } from '@/hooks/useStageRef';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';

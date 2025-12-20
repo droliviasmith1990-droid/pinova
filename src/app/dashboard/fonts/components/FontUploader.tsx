@@ -81,11 +81,12 @@ export function FontUploader({ onClose, onUploadSuccess }: FontUploaderProps) {
                 onUploadSuccess();
                 onClose();
             } else {
-                toast.error('Failed to upload font');
+                console.error('Upload failed - no result returned');
+                toast.error('Failed to upload font. Check console for details.');
             }
         } catch (error) {
             console.error('Upload error:', error);
-            toast.error('An error occurred while uploading');
+            toast.error(`An error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`);
         } finally {
             setUploading(false);
         }

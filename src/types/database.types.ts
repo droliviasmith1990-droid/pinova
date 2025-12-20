@@ -367,7 +367,7 @@ export interface Database {
                 Insert: DbUsageStatsInsert;
                 Update: never;
             };
-            fonts: {
+            custom_fonts: {
                 Row: DbFont;
                 Insert: DbFontInsert;
                 Update: DbFontUpdate;

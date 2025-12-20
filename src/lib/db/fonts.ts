@@ -97,6 +97,8 @@ export async function uploadFont(
 
     if (error) {
         console.error('Font DB insert error:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        console.error('Attempting to insert:', { ...fontData, user_id: userId });
         // Clean up uploaded file
         await supabase.storage.from('assets').remove([storagePath]);
         return null;

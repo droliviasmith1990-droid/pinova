@@ -43,6 +43,8 @@ interface TagState {
     selectedTagId: string | null;
     /** Whether tags have been fetched at least once */
     hasFetched: boolean;
+    /** Timestamp of last fetch (for cache TTL) */
+    lastFetchedAt: number | null;
     /** Search results (separate from main list) */
     searchResults: DbTag[];
     /** Loading state for search operations */
@@ -57,6 +59,12 @@ interface TagActions {
      * @param withCounts - If true, includes template counts (slower)
      */
     fetchTags: (withCounts?: boolean) => Promise<void>;
+
+    /**
+     * Fetch tags only if cache is stale or not yet fetched
+     * @param withCounts - If true, includes template counts (slower)
+     */
+    fetchIfNeeded: (withCounts?: boolean) => Promise<void>;
 
     /**
      * Create a new tag
@@ -127,6 +135,7 @@ const initialState: TagState = {
     error: null,
     selectedTagId: null,
     hasFetched: false,
+    lastFetchedAt: null,
     searchResults: [],
     isSearching: false,
     searchQuery: '',
@@ -170,6 +179,7 @@ export const useTagStore = create<TagState & TagActions>((set, get) => ({
                 tags,
                 isLoading: false,
                 hasFetched: true,
+                lastFetchedAt: Date.now(),
             });
         } catch (error) {
             console.error('Error fetching tags:', error);
@@ -179,6 +189,22 @@ export const useTagStore = create<TagState & TagActions>((set, get) => ({
             });
             toast.error('Failed to load tags');
         }
+    },
+
+    fetchIfNeeded: async (withCounts = false) => {
+        const { hasFetched, lastFetchedAt, isLoading } = get();
+        const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+        
+        // Skip if currently loading
+        if (isLoading) return;
+        
+        // Skip if recently fetched (within cache TTL)
+        if (hasFetched && lastFetchedAt && (Date.now() - lastFetchedAt) < CACHE_TTL_MS) {
+            return;
+        }
+        
+        // Fetch data
+        await get().fetchTags(withCounts);
     },
 
     // ─────────────────────────────────────────────

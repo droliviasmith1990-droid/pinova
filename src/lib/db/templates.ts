@@ -1,63 +1,26 @@
 // Template database operations
 import { supabase, isSupabaseConfigured, getCurrentUserId } from '../supabase';
 import { DbTemplate, DbCategory, DbTag } from '@/types/database.types';
-import { Element, CanvasSize } from '@/types/editor';
+import { Element } from '@/types/editor';
 import { assignTagsToTemplate } from './tags';
 
-// ============================================
-// Types for template operations
-// ============================================
-export interface SaveTemplateData {
-    id?: string;
-    name: string;
-    description?: string;
-    canvas_size: CanvasSize;
-    background_color: string;
-    elements: Element[];
-    thumbnail_url?: string;
-    category?: string;
-    category_id?: string;
-    is_public?: boolean;
-    is_featured?: boolean;
-}
+// Import shared types from templates module
+import type {
+    SaveTemplateData,
+    TemplateListItem,
+    TemplateFilters,
+    TemplateMetadata,
+} from './templates/types';
 
-export interface TemplateListItem {
-    id: string;
-    name: string;
-    thumbnail_url: string | null;
-    category: string | null;
-    category_id: string | null;
-    is_featured: boolean;
-    view_count: number;
-    created_at: string;
-    updated_at: string;
-    // Joined data
-    category_data?: DbCategory | null;
-    tags?: DbTag[];
-}
+// Re-export types for backwards compatibility
+export type {
+    SaveTemplateData,
+    TemplateListItem,
+    TemplateFilters,
+    TemplateMetadata,
+} from './templates/types';
 
-/**
- * Filters for querying templates
- */
-export interface TemplateFilters {
-    categoryId?: string;
-    tagIds?: string[];
-    search?: string;
-    isFeatured?: boolean;
-    isPublic?: boolean;
-}
-
-/**
- * Metadata update for templates
- */
-export interface TemplateMetadata {
-    name?: string;
-    categoryId?: string | null;
-    tagIds?: string[];
-    isFeatured?: boolean;
-    description?: string;
-}
-
+// Note: TemplateWithElements is defined below as it extends TemplateListItem
 // ============================================
 // Template Name Helpers
 // ============================================
@@ -249,6 +212,123 @@ export async function getTemplates(): Promise<TemplateListItem[]> {
         return templates || [];
     } catch (error) {
         console.error('Error fetching templates:', error);
+        return [];
+    }
+}
+
+/**
+ * Template with elements for dynamic data extraction
+ */
+export interface TemplateWithElements extends TemplateListItem {
+    elements: Element[];
+}
+
+/**
+ * Get templates with elements included for dynamic data extraction
+ * This is an optimized single-query version that avoids N+1 database calls
+ * @param filters - Optional filter criteria
+ * @returns Array of templates with elements
+ */
+export async function getTemplatesWithElements(
+    filters?: TemplateFilters
+): Promise<TemplateWithElements[]> {
+    if (!isSupabaseConfigured()) {
+        console.warn('Supabase not configured');
+        return [];
+    }
+
+    const userId = await getCurrentUserId();
+    if (!userId && !filters?.isPublic) {
+        console.warn('User not authenticated');
+        return [];
+    }
+
+    try {
+        // If filtering by tags, first get template IDs that have those tags
+        let filteredTemplateIds: string[] | null = null;
+        
+        if (filters?.tagIds && filters.tagIds.length > 0) {
+            const { data: taggedTemplates, error: tagError } = await supabase
+                .from('template_tags')
+                .select('template_id')
+                .in('tag_id', filters.tagIds);
+
+            if (tagError) {
+                console.error('Error fetching template tags:', tagError);
+                return [];
+            }
+
+            filteredTemplateIds = [...new Set(
+                (taggedTemplates || []).map(t => t.template_id)
+            )];
+
+            if (filteredTemplateIds.length === 0) {
+                return [];
+            }
+        }
+
+        // Build query including elements for dynamic data
+        let query = supabase
+            .from('templates')
+            .select(`
+                id, name, thumbnail_url, category, category_id, 
+                is_featured, view_count, created_at, updated_at,
+                elements,
+                category_data:categories(id, name, slug, icon, color)
+            `);
+
+        // Apply filters
+        if (filters?.isPublic) {
+            query = query.eq('is_public', true);
+        } else if (userId) {
+            query = query.eq('user_id', userId);
+        }
+
+        if (filters?.categoryId) {
+            query = query.eq('category_id', filters.categoryId);
+        }
+
+        if (filters?.isFeatured) {
+            query = query.eq('is_featured', true);
+        }
+
+        if (filters?.search) {
+            query = query.ilike('name', `%${filters.search}%`);
+        }
+
+        if (filteredTemplateIds) {
+            query = query.in('id', filteredTemplateIds);
+        }
+
+        query = query.order('updated_at', { ascending: false });
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('Error fetching templates with elements:', error);
+            return [];
+        }
+
+        // Transform the response
+        const templates = (data || []).map(t => ({
+            id: t.id,
+            name: t.name,
+            thumbnail_url: t.thumbnail_url,
+            category: t.category,
+            category_id: t.category_id,
+            is_featured: t.is_featured,
+            view_count: t.view_count,
+            created_at: t.created_at,
+            updated_at: t.updated_at,
+            elements: (t.elements as Element[]) || [],
+            category_data: Array.isArray(t.category_data) 
+                ? t.category_data[0] as DbCategory | null
+                : t.category_data as DbCategory | null,
+        })) as TemplateWithElements[];
+
+        return templates;
+    } catch (error) {
+        console.error('Error fetching templates with elements:', error);
         return [];
     }
 }

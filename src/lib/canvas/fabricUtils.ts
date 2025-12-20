@@ -44,9 +44,9 @@ export async function cloneEditorObject(
     cloned.name = `${obj.name} (copy)`;
     
     // Deep clone the element data
-    if (obj._element) {
-        cloned._element = {
-            ...obj._element,
+    if (obj._elementData) {
+        cloned._elementData = {
+            ...obj._elementData,
             id: cloned.id,
             name: cloned.name,
         };

@@ -33,6 +33,8 @@ const CANVAS_PRESETS = [
     { name: 'Square', width: 1000, height: 1000 },
 ];
 
+import { useTemplateStore } from '@/stores/templateStore';
+
 export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImportModalProps) {
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
@@ -48,6 +50,8 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const { addCanvaBackground, setCanvasSize, setTemplateName: setStoreTemplateName, resetToNewTemplate, setElements } = useEditorStore();
+    // FIX: Import template store to ensure Header updates correctly (since it reads from templateStore)
+    const setGlobalTemplateName = useTemplateStore((s) => s.setTemplateName);
 
     // BUG-SVG-005 FIX: Helper to convert RGB/RGBA to hex
     const rgbToHex = (color: string): string => {
@@ -809,6 +813,7 @@ export function CanvaImportModal({ isOpen, onClose, onImportComplete }: CanvaImp
             resetToNewTemplate();
             setCanvasSize(canvasWidth, canvasHeight);
             setStoreTemplateName(templateName);
+            setGlobalTemplateName(templateName); // FIX: Update global store for Header title
 
             // If SVG file, parse and import using Fabric.js native loading
             if (uploadedFile.type === 'svg') {

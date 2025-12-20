@@ -4,24 +4,15 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
-import { TemplateListItem, getTemplatesFiltered, deleteTemplate, duplicateTemplate, updateTemplateMetadata, getTemplate } from '@/lib/db/templates';
+import { TemplateListItem, getTemplatesWithElements, TemplateWithElements, deleteTemplate, duplicateTemplate, updateTemplateMetadata } from '@/lib/db/templates';
 import { extractDynamicData, DynamicDataSummary, DynamicDataFilter, matchesDynamicDataFilter } from '@/lib/utils/extractDynamicData';
-import { useCategoryStore } from '@/stores/categoryStore';
-import { useTagStore } from '@/stores/tagStore';
-import { Element } from '@/types/editor';
 
 import { TemplateToolbar, ViewMode } from './TemplateToolbar';
-import { FilterPanel } from './FilterPanel';
-import { ActiveFilterPills } from './ActiveFilterPills';
 import { TemplateGrid } from './TemplateGrid';
+import { ScalableFilterSidebar } from '@/components/shared/ScalableFilterSidebar';
 import { BulkActionToolbar } from './BulkActionToolbar';
 import { QuickEditModal } from './QuickEditModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
-
-// Extended template with elements for dynamic data
-interface TemplateWithElements extends TemplateListItem {
-    elements?: Element[];
-}
 
 export function TemplatesPageContainer() {
     const router = useRouter();
@@ -51,10 +42,6 @@ export function TemplatesPageContainer() {
     const [isDeleting, setIsDeleting] = useState(false);
     const [bulkDeleteMode, setBulkDeleteMode] = useState(false);
     
-    // Stores
-    const { categories } = useCategoryStore();
-    const { tags } = useTagStore();
-    
     // Load view preference from localStorage
     useEffect(() => {
         const savedViewMode = localStorage.getItem('template_view_mode');
@@ -63,57 +50,26 @@ export function TemplatesPageContainer() {
         }
     }, []);
     
-    // Fetch templates
+    // Fetch templates - optimized single query
     const fetchTemplates = useCallback(async () => {
         setIsLoading(true);
         try {
-            // Fetch filtered templates
-            const data = await getTemplatesFiltered({
+            // Use optimized function that fetches elements in one query
+            const data = await getTemplatesWithElements({
                 categoryId: selectedCategoryId || undefined,
                 tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
                 search: searchQuery || undefined,
                 isFeatured: isFeatured || undefined,
             });
             
-            // Fetch full templates in parallel (batched) for dynamic data extraction
-            const BATCH_SIZE = 10;
-            const templatesWithElements: TemplateWithElements[] = [];
+            // Extract dynamic data from elements (in-memory, no extra queries)
             const dataMap = new Map<string, DynamicDataSummary>();
-            
-            // Process in batches to avoid overwhelming the API
-            for (let i = 0; i < data.length; i += BATCH_SIZE) {
-                const batch = data.slice(i, i + BATCH_SIZE);
-                
-                // Fetch batch in parallel
-                const batchResults = await Promise.all(
-                    batch.map(async (template) => {
-                        try {
-                            const fullTemplate = await getTemplate(template.id);
-                            return { template, fullTemplate };
-                        } catch {
-                            return { template, fullTemplate: null };
-                        }
-                    })
-                );
-                
-                // Process batch results
-                for (const { template, fullTemplate } of batchResults) {
-                    if (fullTemplate) {
-                        templatesWithElements.push({
-                            ...template,
-                            elements: fullTemplate.elements,
-                        });
-                        
-                        const dynamicData = extractDynamicData(fullTemplate.elements || []);
-                        dataMap.set(template.id, dynamicData);
-                    } else {
-                        templatesWithElements.push(template);
-                        dataMap.set(template.id, { images: 0, texts: 0, total: 0 });
-                    }
-                }
+            for (const template of data) {
+                const summary = extractDynamicData(template.elements || []);
+                dataMap.set(template.id, summary);
             }
             
-            setTemplates(templatesWithElements);
+            setTemplates(data);
             setDynamicDataMap(dataMap);
         } catch (error) {
             console.error('Error fetching templates:', error);
@@ -308,50 +264,41 @@ export function TemplatesPageContainer() {
                 onClearSelection={handleClearSelection}
             />
             
-            {/* Filter Panel */}
-            <FilterPanel
-                isOpen={showFilters}
-                selectedCategoryId={selectedCategoryId}
-                onCategoryChange={setSelectedCategoryId}
-                selectedTagIds={selectedTagIds}
-                onTagsChange={setSelectedTagIds}
-                isFeatured={isFeatured}
-                onFeaturedChange={setIsFeatured}
-                dynamicDataFilter={dynamicDataFilter}
-                onDynamicDataFilterChange={setDynamicDataFilter}
-                onClearAll={clearAllFilters}
-            />
-            
-            {/* Active Filter Pills */}
-            <ActiveFilterPills
-                selectedCategoryId={selectedCategoryId}
-                categories={categories}
-                onCategoryRemove={() => setSelectedCategoryId(null)}
-                selectedTagIds={selectedTagIds}
-                tags={tags}
-                onTagRemove={(tagId) => setSelectedTagIds(prev => prev.filter(id => id !== tagId))}
-                isFeatured={isFeatured}
-                onFeaturedRemove={() => setIsFeatured(false)}
-                dynamicDataFilter={dynamicDataFilter}
-                onDynamicDataRemove={() => setDynamicDataFilter(null)}
-                onClearAll={clearAllFilters}
-            />
-            
-            {/* Template Grid */}
-            <TemplateGrid
-                templates={filteredTemplates}
-                dynamicDataMap={dynamicDataMap}
-                selectedIds={selectedIds}
-                onSelect={handleSelect}
-                onQuickEdit={setQuickEditTemplate}
-                onDuplicate={handleDuplicate}
-                onDelete={(id) => setDeleteTemplateId(id)}
-                onGenerate={handleGenerate}
-                viewMode={viewMode}
-                isLoading={isLoading}
-                hasFilters={activeFilterCount > 0 || !!searchQuery}
-                onClearFilters={clearAllFilters}
-            />
+            {/* Main Content: Sidebar + Grid */}
+            <div className="flex gap-6">
+                {/* Filter Sidebar */}
+                <ScalableFilterSidebar
+                    isOpen={showFilters}
+                    selectedCategoryId={selectedCategoryId}
+                    onCategoryChange={setSelectedCategoryId}
+                    selectedTagIds={selectedTagIds}
+                    onTagsChange={setSelectedTagIds}
+                    isFeatured={isFeatured}
+                    onFeaturedChange={setIsFeatured}
+                    dynamicDataFilter={dynamicDataFilter}
+                    onDynamicDataFilterChange={setDynamicDataFilter}
+                    onClearAll={clearAllFilters}
+                    showDynamicData={true}
+                />
+
+                {/* Template Grid */}
+                <div className="flex-1 min-w-0">
+                    <TemplateGrid
+                        templates={filteredTemplates}
+                        dynamicDataMap={dynamicDataMap}
+                        selectedIds={selectedIds}
+                        onSelect={handleSelect}
+                        onQuickEdit={setQuickEditTemplate}
+                        onDuplicate={handleDuplicate}
+                        onDelete={(id) => setDeleteTemplateId(id)}
+                        onGenerate={handleGenerate}
+                        viewMode={viewMode}
+                        isLoading={isLoading}
+                        hasFilters={activeFilterCount > 0 || !!searchQuery}
+                        onClearFilters={clearAllFilters}
+                    />
+                </div>
+            </div>
             
             {/* Quick Edit Modal */}
             <QuickEditModal

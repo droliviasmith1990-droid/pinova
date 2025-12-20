@@ -61,8 +61,8 @@ export interface EditorFabricObject extends fabric.FabricObject {
     id: string;
     /** Human-readable element name */
     name: string;
-    /** Original element data for metadata preservation */
-    _element: Element;
+    /** Original element data for metadata preservation (renamed from _element to avoid Fabric.js collision) */
+    _elementData: Element;
     /** Original text before transforms (for text elements) */
     _originalText?: string;
     /** Flag for async image loading */
@@ -88,7 +88,7 @@ export function toEditorFabricObject(
     const editorObj = obj as EditorFabricObject;
     editorObj.id = element.id;
     editorObj.name = element.name;
-    editorObj._element = element;
+    editorObj._elementData = element;
     return editorObj;
 }
 

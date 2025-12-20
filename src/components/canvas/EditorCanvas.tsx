@@ -37,6 +37,9 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
     const canvasManagerRef = useRef<CanvasManager | null>(null);
     const activeObjectRef = useRef<any>(null); // Ref to track active object for live updates
 
+    // FIX: State-based manager instance to trigger hook updates when initialized
+    const [canvasManagerInstance, setCanvasManagerInstance] = useState<CanvasManager | null>(null);
+
     // Local state
     const [isCanvasReady, setIsCanvasReady] = useState(false);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; isOpen: boolean }>({
@@ -146,8 +149,8 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
 
     const selectedElement = elements.find(el => el.id === selectedIds[0]);
 
-    // Initialize SynchronizationBridge
-    useSynchronizationBridge(canvasManagerRef.current);
+    // Initialize SynchronizationBridge - uses state instance so hook re-runs when manager is ready
+    useSynchronizationBridge(canvasManagerInstance);
 
     /**
      * Initialize CanvasManager
@@ -168,6 +171,7 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
         manager.initialize(canvasElRef.current, config);
 
         canvasManagerRef.current = manager;
+        setCanvasManagerInstance(manager); // Trigger re-render so useSynchronizationBridge can subscribe
         setIsCanvasReady(true);
 
         // Register canvas with shared store for thumbnail generation
@@ -199,10 +203,8 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
         const change = detectElementChange(prevElementsRef.current, elements);
 
         if (change.type === 'list') {
-            console.log('[EditorCanvas.v2] List change, full sync');
             canvasManagerRef.current.replaceAllElements(elements);
         } else if (change.type === 'properties' && change.modified) {
-            console.log('[EditorCanvas.v2] Property changes:', change.modified.length);
             
             // Check if any modified elements need full replacement (fitMode or previewText changes)
             let needsFullSync = false;
@@ -578,8 +580,12 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
                     }}
                 />
 
-                {/* Element Toolbar - Hidden during drag/resize for clean UX */}
-                {toolbarVisible && selectedElement && !isDragging && !isResizing && (
+                {/* Element Toolbar - Hidden during drag/resize for clean UX, and HIDDEN IF LOCKED or BACKGROUND */}
+                {toolbarVisible && selectedElement && 
+                 !isDragging && 
+                 !isResizing && 
+                 !selectedElement.locked && 
+                 !(selectedElement.type === 'image' && (selectedElement as any).isCanvaBackground) && (
                     <ElementToolbar
                         x={toolbarPosition.x}
                         y={toolbarPosition.y}

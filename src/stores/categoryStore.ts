@@ -41,6 +41,8 @@ interface CategoryState {
     selectedCategoryId: string | null;
     /** Whether categories have been fetched at least once */
     hasFetched: boolean;
+    /** Timestamp of last fetch (for cache TTL) */
+    lastFetchedAt: number | null;
 }
 
 interface CategoryActions {
@@ -49,6 +51,12 @@ interface CategoryActions {
      * @param withCounts - If true, includes template counts (slower)
      */
     fetchCategories: (withCounts?: boolean) => Promise<void>;
+
+    /**
+     * Fetch categories only if cache is stale or not yet fetched
+     * @param withCounts - If true, includes template counts (slower)
+     */
+    fetchIfNeeded: (withCounts?: boolean) => Promise<void>;
 
     /**
      * Create a new category
@@ -102,12 +110,16 @@ interface CategoryActions {
 // Initial State
 // ============================================
 
+/** Cache TTL in milliseconds (5 minutes) */
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 const initialState: CategoryState = {
     categories: [],
     isLoading: false,
     error: null,
     selectedCategoryId: null,
     hasFetched: false,
+    lastFetchedAt: null,
 };
 
 // ============================================
@@ -137,6 +149,7 @@ export const useCategoryStore = create<CategoryState & CategoryActions>((set, ge
                 categories,
                 isLoading: false,
                 hasFetched: true,
+                lastFetchedAt: Date.now(),
             });
         } catch (error) {
             console.error('Error fetching categories:', error);
@@ -147,6 +160,22 @@ export const useCategoryStore = create<CategoryState & CategoryActions>((set, ge
             toast.error('Failed to load categories');
         }
     },
+
+    fetchIfNeeded: async (withCounts = false) => {
+        const { hasFetched, lastFetchedAt, isLoading } = get();
+        
+        // Skip if currently loading
+        if (isLoading) return;
+        
+        // Skip if recently fetched (within cache TTL)
+        if (hasFetched && lastFetchedAt && (Date.now() - lastFetchedAt) < CACHE_TTL_MS) {
+            return;
+        }
+        
+        // Fetch data
+        await get().fetchCategories(withCounts);
+    },
+
 
     // ─────────────────────────────────────────────
     // Create Operation (Optimistic)

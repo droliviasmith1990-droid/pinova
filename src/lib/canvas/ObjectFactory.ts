@@ -18,7 +18,8 @@ interface ExtendedFabricObject extends fabric.FabricObject {
     name?: string;
     _needsAsyncImageLoad?: boolean;
     _imageUrl?: string;
-    _element?: Element;
+    /** Element data from our stores (renamed from _element to avoid Fabric.js collision) */
+    _elementData?: Element;
     /** Original untransformed text for text elements (Phase 1) */
     _originalText?: string;
     /** Flag for image placeholder groups */
@@ -167,7 +168,7 @@ export function createFabricObject(element: Element): fabric.FabricObject | null
                 // Mark for async loading
                 (obj as ExtendedFabricObject)._needsAsyncImageLoad = true;
                 (obj as ExtendedFabricObject)._imageUrl = imageUrl;
-                (obj as ExtendedFabricObject)._element = element;
+                (obj as ExtendedFabricObject)._elementData = element;
             } else {
                 // No URL - create simple placeholder rect
                 // Note: Using simple Rect instead of Group to avoid position sync issues
@@ -253,7 +254,7 @@ export function createFabricObject(element: Element): fabric.FabricObject | null
         
         // BUGFIX: Store complete element data for metadata preservation
         // This allows syncFabricToElement to preserve properties not stored in Fabric.js
-        (obj as ExtendedFabricObject)._element = element;
+        (obj as ExtendedFabricObject)._elementData = element;
 
         // Apply common properties
         obj.set({
@@ -293,7 +294,7 @@ export function syncElementToFabric(
     // BUGFIX: Update stored element with new data to preserve metadata
     // Only update if this is a direct element update, not a sync operation
     const extFabric = fabricObject as ExtendedFabricObject;
-    if (extFabric._element && updates && Object.keys(updates).length > 0) {
+    if (extFabric._elementData && updates && Object.keys(updates).length > 0) {
         // Create clean merge without any internal Fabric-specific properties
         const cleanUpdates: Record<string, unknown> = {};
         for (const key in updates) {
@@ -303,7 +304,7 @@ export function syncElementToFabric(
                 cleanUpdates[key] = value;
             }
         }
-        extFabric._element = { ...extFabric._element, ...cleanUpdates } as Element;
+        extFabric._elementData = { ...extFabric._elementData, ...cleanUpdates } as Element;
     }
 
     // Position properties - most frequently changed during drag
@@ -381,7 +382,7 @@ export function syncElementToFabric(
     
     if (targetTextbox) {
         const textUpdates = updates as Partial<TextElement>;
-        const storedEl = extFabric._element as TextElement | undefined;
+        const storedEl = extFabric._elementData as TextElement | undefined;
 
         // P1-3 FIX: Build updates object for single batched set() call
         // Reduces ~15 individual set() calls to 1, saving ~30% on dirty checks
@@ -497,7 +498,7 @@ export function syncElementToFabric(
         // Use stored original text to properly switch transforms
         // For dynamic elements, use previewText for display if available
         if (textUpdates.textTransform !== undefined || textUpdates.text !== undefined || textUpdates.previewText !== undefined || textUpdates.isDynamic !== undefined) {
-            const storedEl = extFabric._element as TextElement | undefined;
+            const storedEl = extFabric._elementData as TextElement | undefined;
             const isDynamic = textUpdates.isDynamic ?? storedEl?.isDynamic ?? false;
             const previewText = textUpdates.previewText ?? storedEl?.previewText;
             
@@ -549,7 +550,7 @@ export function syncElementToFabric(
 export function syncFabricToElement(fabricObject: fabric.FabricObject): Element | null {
     const id = (fabricObject as ExtendedFabricObject).id;
     const name = (fabricObject as ExtendedFabricObject).name || 'Untitled';
-    const storedElement = (fabricObject as ExtendedFabricObject)._element;
+    const storedElement = (fabricObject as ExtendedFabricObject)._elementData;
 
     if (!id) {
         console.warn('[ObjectFactory] Fabric object missing ID');
@@ -732,6 +733,10 @@ export function syncFabricToElement(fabricObject: fabric.FabricObject): Element 
 /**
  * Load an image asynchronously and return a Fabric.js Image object
  * Handles CORS via proxy for external URLs
+ * 
+ * CRITICAL FIX: Uses manual HTMLImageElement preloading to ensure
+ * the image is fully loaded before Fabric.js creates the FabricImage.
+ * This fixes "Failed to execute 'drawImage'" TypeError in Fabric.js 6.x
  */
 export async function loadFabricImage(
     imageUrl: string,
@@ -745,32 +750,56 @@ export async function loadFabricImage(
         ? `/api/proxy-image?url=${encodeURIComponent(imageUrl)}`
         : imageUrl;
 
+    /**
+     * Helper function to preload image and create FabricImage
+     */
+    const loadImageFromUrl = (url: string): Promise<fabric.FabricImage> => {
+        return new Promise((resolve, reject) => {
+            const imgElement = new Image();
+            imgElement.crossOrigin = 'anonymous';
+            
+            imgElement.onload = () => {
+                try {
+                    // Create FabricImage from the loaded HTMLImageElement
+                    const fabricImg = new fabric.FabricImage(imgElement, {
+                        left: element.x,
+                        top: element.y,
+                        angle: element.rotation || 0,
+                        opacity: element.opacity ?? 1,
+                        selectable: !element.locked,
+                        evented: !element.locked,
+                    });
+                    
+                    // Scale image to fit element dimensions
+                    if (fabricImg.width && element.width) {
+                        fabricImg.scaleX = element.width / fabricImg.width;
+                        fabricImg.scaleY = element.height / fabricImg.height;
+                    }
+                    
+                    resolve(fabricImg);
+                } catch (err) {
+                    console.error('[ObjectFactory] Error creating FabricImage:', err);
+                    reject(err);
+                }
+            };
+            
+            imgElement.onerror = () => {
+                console.error('[ObjectFactory] Image load error:', url.substring(0, 100));
+                reject(new Error(`Failed to load image: ${url}`));
+            };
+            
+            imgElement.src = url;
+        });
+    };
+
     try {
-        const img = await fabric.FabricImage.fromURL(urlToLoad, {
-            crossOrigin: 'anonymous'
-        });
-
-        // Scale image to fit element dimensions
-        if (img.width && element.width) {
-            img.scaleX = element.width / img.width;
-            img.scaleY = element.height / img.height;
-        }
-
-        // Set position and other properties
-        img.set({
-            left: element.x,
-            top: element.y,
-            angle: element.rotation || 0,
-            opacity: element.opacity ?? 1,
-            selectable: !element.locked,
-            evented: !element.locked,
-        });
+        const img = await loadImageFromUrl(urlToLoad);
 
         // Store element ID and metadata for reference
         (img as unknown as ExtendedFabricObject).id = element.id;
         (img as unknown as ExtendedFabricObject).name = element.name;
         // BUGFIX: Store complete element data for metadata preservation
-        (img as unknown as ExtendedFabricObject)._element = element;
+        (img as unknown as ExtendedFabricObject)._elementData = element;
 
         // Apply corner radius if specified
         if (element.cornerRadius && element.cornerRadius > 0) {
@@ -793,26 +822,24 @@ export async function loadFabricImage(
         if (!needsProxy) {
             try {
                 const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(imageUrl)}`;
-                const img = await fabric.FabricImage.fromURL(proxyUrl, {
-                    crossOrigin: 'anonymous'
-                });
+                const img = await loadImageFromUrl(proxyUrl);
 
-                if (img.width && element.width) {
-                    img.scaleX = element.width / img.width;
-                    img.scaleY = element.height / img.height;
-                }
-
-                img.set({
-                    left: element.x,
-                    top: element.y,
-                    angle: element.rotation || 0,
-                    opacity: element.opacity ?? 1,
-                });
-
+                // Store element ID and metadata for reference
                 (img as unknown as ExtendedFabricObject).id = element.id;
                 (img as unknown as ExtendedFabricObject).name = element.name;
-                // BUGFIX: Store complete element data for metadata preservation
-                (img as unknown as ExtendedFabricObject)._element = element;
+                (img as unknown as ExtendedFabricObject)._elementData = element;
+
+                // Apply corner radius if specified
+                if (element.cornerRadius && element.cornerRadius > 0) {
+                    img.clipPath = new fabric.Rect({
+                        width: img.width,
+                        height: img.height,
+                        rx: element.cornerRadius / (img.scaleX || 1),
+                        ry: element.cornerRadius / (img.scaleY || 1),
+                        originX: 'center',
+                        originY: 'center',
+                    });
+                }
 
                 console.log('[ObjectFactory] Image loaded via proxy fallback:', element.id);
                 return img;
