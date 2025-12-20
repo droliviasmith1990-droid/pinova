@@ -49,7 +49,11 @@ const PROJECT_VARIANTS: Record<string, any> = {
   }
 };
 
-export function ProjectCard({ project }: { project: DashboardProject }) {
+interface ProjectCardProps {
+  project: DashboardProject;
+}
+
+export function ProjectCard({ project }: ProjectCardProps) {
   const statusConfig: Record<string, { text: string, icon: string }> = {
     completed: { text: "Completed", icon: "check_circle" },
     in_progress: { text: "In Progress", icon: "play_arrow" },

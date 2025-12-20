@@ -292,6 +292,36 @@ export interface DbUsageStatsInsert {
 }
 
 // ============================================
+// Fonts
+// ============================================
+export interface DbFont {
+    id: string;
+    user_id: string;
+    family: string;
+    file_url: string;
+    format: 'ttf' | 'otf' | 'woff' | 'woff2';
+    category: 'sans-serif' | 'serif' | 'display' | 'script' | 'handwriting' | 'monospace';
+    file_size: number | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface DbFontInsert {
+    id?: string;
+    user_id: string;
+    family: string;
+    file_url: string;
+    format: DbFont['format'];
+    category: DbFont['category'];
+    file_size?: number | null;
+}
+
+export interface DbFontUpdate {
+    family?: string;
+    category?: DbFont['category'];
+}
+
+// ============================================
 // Database Schema Definition (for typed Supabase client)
 // ============================================
 export interface Database {
@@ -336,6 +366,11 @@ export interface Database {
                 Row: DbUsageStats;
                 Insert: DbUsageStatsInsert;
                 Update: never;
+            };
+            fonts: {
+                Row: DbFont;
+                Insert: DbFontInsert;
+                Update: DbFontUpdate;
             };
         };
     };

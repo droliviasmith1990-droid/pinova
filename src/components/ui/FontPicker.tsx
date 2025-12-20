@@ -10,6 +10,7 @@ import {
     isGoogleFontLoaded,
     GoogleFont,
 } from '@/lib/fonts/googleFonts';
+import { getFonts, loadCustomFont, Font } from '@/lib/db/fonts';
 
 interface FontPickerProps {
     value: string;
@@ -31,8 +32,14 @@ export function FontPicker({ value, onChange, className }: FontPickerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState('');
     const [loadingFont, setLoadingFont] = useState<string | null>(null);
+    const [customFonts, setCustomFonts] = useState<Font[]>([]);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
+
+    // Load custom fonts on mount
+    useEffect(() => {
+        getFonts().then(setCustomFonts);
+    }, []);
 
     // Filter fonts based on search
     const filteredGoogleFonts = useMemo(() => {
@@ -46,6 +53,12 @@ export function FontPicker({ value, onChange, className }: FontPickerProps) {
         const query = search.toLowerCase();
         return SYSTEM_FONTS.filter(f => f.family.toLowerCase().includes(query));
     }, [search]);
+
+    const filteredCustomFonts = useMemo(() => {
+        if (!search.trim()) return customFonts;
+        const query = search.toLowerCase();
+        return customFonts.filter(f => f.family.toLowerCase().includes(query));
+    }, [search, customFonts]);
 
     // Handle font selection
     const handleSelect = useCallback(async (font: GoogleFont, isSystem: boolean) => {
@@ -63,6 +76,20 @@ export function FontPicker({ value, onChange, className }: FontPickerProps) {
         }
 
         onChange(font.family, provider);
+        setIsOpen(false);
+        setSearch('');
+    }, [onChange]);
+
+    // Handle custom font selection
+    const handleSelectCustom = useCallback(async (font: Font) => {
+        setLoadingFont(font.family);
+        try {
+            await loadCustomFont(font);
+        } catch (error) {
+            console.error('Failed to load custom font:', error);
+        }
+        setLoadingFont(null);
+        onChange(font.family, 'custom');
         setIsOpen(false);
         setSearch('');
     }, [onChange]);
@@ -163,7 +190,25 @@ export function FontPicker({ value, onChange, className }: FontPickerProps) {
                             </div>
                         )}
 
-                        {/* System Fonts */}
+                        {/* Custom Fonts */}
+                        {filteredCustomFonts.length > 0 && (
+                            <div>
+                                <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50">
+                                    My Custom Fonts
+                                </div>
+                                {filteredCustomFonts.map((font) => (
+                                    <FontOption
+                                        key={font.id}
+                                        font={{ family: font.family } as GoogleFont}
+                                        isSelected={value === font.family}
+                                        isLoading={loadingFont === font.family}
+                                        onClick={() => handleSelectCustom(font)}
+                                    />
+                                ))}
+                            </div>
+                        )}
+
+                         {/* System Fonts */}
                         {filteredSystemFonts.length > 0 && (
                             <div>
                                 <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50">
@@ -182,7 +227,7 @@ export function FontPicker({ value, onChange, className }: FontPickerProps) {
                         )}
 
                         {/* No results */}
-                        {filteredGoogleFonts.length === 0 && filteredSystemFonts.length === 0 && (
+                        {filteredGoogleFonts.length === 0 && filteredSystemFonts.length === 0 && filteredCustomFonts.length === 0 && (
                             <div className="px-3 py-4 text-sm text-gray-500 text-center">
                                 No fonts found for &ldquo;{search}&rdquo;
                             </div>

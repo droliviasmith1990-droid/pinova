@@ -44,7 +44,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
             .from('campaigns')
             .select('id', { count: 'exact', head: true })
             .eq('user_id', userId)
-            .in('status', ['running', 'in_progress'] as CampaignStatus[]);
+            .in('status', ['processing'] as CampaignStatus[]);
 
         if (campaignsError) console.error('Error counting active campaigns:', campaignsError);
 
