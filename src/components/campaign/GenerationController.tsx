@@ -129,8 +129,10 @@ export function GenerationController({
     const [isPausing, setIsPausing] = useState(false);
     const [activeMode, setActiveMode] = useState<'client' | 'server' | null>(null);
     
-    // Render mode selection with localStorage persistence (defaults to 'server' for bulk)
-    const [renderMode, setRenderModeState] = useState<'client' | 'server'>('server');
+    // Render mode selection with localStorage persistence
+    // NOTE: Server mode requires 'canvas' npm package which only works on Linux (Vercel deployment)
+    // Default to 'client' for local development
+    const [renderMode, setRenderModeState] = useState<'client' | 'server'>('client');
     
     // Load renderMode from localStorage on mount
     useEffect(() => {
@@ -935,11 +937,11 @@ export function GenerationController({
                             </div>
                         </label>
                         
-                        {/* Server Mode Option (Recommended) */}
+                        {/* Server Mode Option - Requires Vercel deployment */}
                         <label 
                             className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors
                                 ${renderMode === 'server' 
-                                    ? 'border-blue-300 bg-blue-50' 
+                                    ? 'border-orange-300 bg-orange-50' 
                                     : 'border-gray-200 hover:bg-gray-100'}`}
                         >
                             <input 
@@ -953,12 +955,12 @@ export function GenerationController({
                                 <div className="font-medium text-gray-900 flex items-center gap-2">
                                     <Server className="w-4 h-4" />
                                     Server-Side
-                                    <span className="text-xs bg-green-500 text-white px-1.5 py-0.5 rounded font-normal">
-                                        Recommended
+                                    <span className="text-xs bg-orange-500 text-white px-1.5 py-0.5 rounded font-normal">
+                                        Vercel Only
                                     </span>
                                 </div>
                                 <div className="text-xs text-gray-500 mt-0.5">
-                                    10x faster for bulk generation (100+ pins). Uses Vercel functions.
+                                    10x faster but requires Vercel deployment. Fails locally.
                                 </div>
                             </div>
                         </label>
