@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Settings, ChevronDown, ChevronUp, RefreshCw, Zap, Image as ImageIcon, Gauge, Layers } from 'lucide-react';
+import { Settings, ChevronDown, ChevronUp, RefreshCw, Zap, Image as ImageIcon, Gauge, Layers, Save } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { GenerationSettings, DEFAULT_GENERATION_SETTINGS } from './GenerationController';
 
@@ -58,7 +59,16 @@ export function GenerationSettingsPanel({ settings, onChange, disabled }: Genera
 
     const handleReset = () => {
         onChange(DEFAULT_GENERATION_SETTINGS);
+        toast.success('Settings reset to defaults');
     };
+
+    const handleSave = () => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('pin-generator-settings', JSON.stringify(settings));
+            toast.success('Settings saved as default');
+        }
+    };
+
 
     return (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
@@ -176,18 +186,35 @@ export function GenerationSettingsPanel({ settings, onChange, disabled }: Genera
 
                     {/* Footer Controls */}
                     <div className="flex items-center justify-between">
-                        {/* Reset */}
-                        <button
-                            onClick={handleReset}
-                            disabled={disabled}
-                            className={cn(
-                                "flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 transition-colors px-2 py-1 -ml-2 rounded-md hover:bg-gray-100",
-                                disabled && "opacity-50 cursor-not-allowed"
-                            )}
-                        >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            Reset Defaults
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {/* Reset */}
+                            <button
+                                onClick={handleReset}
+                                disabled={disabled}
+                                className={cn(
+                                    "flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 transition-colors px-2 py-1 -ml-2 rounded-md hover:bg-gray-100",
+                                    disabled && "opacity-50 cursor-not-allowed"
+                                )}
+                                title="Reset to factory defaults"
+                            >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                Reset
+                            </button>
+
+                            {/* Save */}
+                            <button
+                                onClick={handleSave}
+                                disabled={disabled}
+                                className={cn(
+                                    "flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors px-2 py-1 rounded-md hover:bg-blue-50",
+                                    disabled && "opacity-50 cursor-not-allowed"
+                                )}
+                                title="Save current settings as default"
+                            >
+                                <Save className="w-3.5 h-3.5" />
+                                Save Default
+                            </button>
+                        </div>
 
                         {/* Pause Toggle */}
                         <div className="flex items-center gap-3">

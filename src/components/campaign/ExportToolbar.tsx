@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Download, Copy, FileSpreadsheet, Loader2, Check } from 'lucide-react';
 import JSZip from 'jszip';
+import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { PinCardData } from './PinCard';
@@ -11,9 +12,11 @@ interface ExportToolbarProps {
     pins: PinCardData[];
     campaignName: string;
     csvData?: Record<string, string>[];
+    totalCount?: number;
+    isEntireCampaignSelected?: boolean;
 }
 
-export function ExportToolbar({ pins, campaignName, csvData }: ExportToolbarProps) {
+export function ExportToolbar({ pins, campaignName, csvData, totalCount, isEntireCampaignSelected }: ExportToolbarProps) {
     const [isZipping, setIsZipping] = useState(false);
     const [zipProgress, setZipProgress] = useState({ current: 0, total: 0 });
     const [isCopied, setIsCopied] = useState(false);
@@ -22,8 +25,13 @@ export function ExportToolbar({ pins, campaignName, csvData }: ExportToolbarProp
 
     // Download All as ZIP
     const handleDownloadZip = async () => {
-        if (completedPins.length === 0) {
+        if (completedPins.length === 0 && !isEntireCampaignSelected) {
             toast.error('No pins to download');
+            return;
+        }
+
+        if (isEntireCampaignSelected) {
+            toast.info('Downloading all pins from database is limited to 50 items at a time currently to prevent browser crashes. Please download by page.', { duration: 5000 });
             return;
         }
 
@@ -69,25 +77,83 @@ export function ExportToolbar({ pins, campaignName, csvData }: ExportToolbarProp
 
     // Copy All URLs
     const handleCopyUrls = async () => {
-        if (completedPins.length === 0) {
+        if (completedPins.length === 0 && !isEntireCampaignSelected) {
             toast.error('No URLs to copy');
             return;
         }
 
-        const urls = completedPins.map((p) => p.imageUrl).join('\n');
+        let urlsToCopy = '';
+
+        if (isEntireCampaignSelected && totalCount && totalCount > pins.length) {
+            // Fetch all URLs from DB
+            const fetchPromise = new Promise<{ data: any[] }>(async (resolve, reject) => {
+                try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const token = session?.access_token;
+                    
+                    if (!token) {
+                         reject(new Error('Authentication required'));
+                         return;
+                    }
+
+                    const response = await fetch(`/api/generated-pins?campaign_id=${window.location.pathname.split('/')[3]}&fields=image_url&limit=10000`, {
+                         headers: {
+                             'Authorization': `Bearer ${token}`
+                         }
+                    });
+
+                    if (!response.ok) {
+                        reject(new Error(`HTTP error ${response.status}`));
+                        return;
+                    }
+                    const result = await response.json();
+                    if (!result.success || !result.data) {
+                        reject(new Error('API returned error'));
+                        return;
+                    }
+                    resolve(result);
+                } catch (err) {
+                    reject(err);
+                }
+            });
+
+            toast.promise(fetchPromise, {
+                loading: 'Fetching all URLs...',
+                success: 'URLs fetched successfully',
+                error: (err) => `Failed: ${err.message}`
+            });
+
+            try {
+                const result = await fetchPromise;
+                urlsToCopy = result.data.map((p: any) => p.image_url).filter(Boolean).join('\n');
+            } catch (error) {
+                console.error('Fetch failed:', error);
+                return;
+            }
+        } else {
+            urlsToCopy = completedPins.map((p) => p.imageUrl).join('\n');
+        }
+
+        if (!urlsToCopy) {
+            toast.error('No URLs found to copy');
+            return;
+        }
 
         try {
-            await navigator.clipboard.writeText(urls);
+            await navigator.clipboard.writeText(urlsToCopy);
             setIsCopied(true);
-            toast.success(`${completedPins.length} URLs copied to clipboard`);
+            // Only show second toast if we copied manual pins or fetch was silent
+            // But since we showed 'URLs fetched successfully', adding another toast 'Copied' is slightly redundant but ok.
+            // Better: 'URLs fetched and copied!'
+            toast.success(`${isEntireCampaignSelected ? 'All' : completedPins.length} URLs copied to clipboard`);
             setTimeout(() => setIsCopied(false), 2000);
         } catch {
-            toast.error('Failed to copy URLs');
+            toast.error('Failed to copy to clipboard');
         }
     };
 
     // Export as CSV
-    const handleExportCsv = () => {
+    const handleExportCsv = async () => {
         if (!csvData || csvData.length === 0) {
             toast.error('No CSV data available');
             return;
@@ -97,22 +163,87 @@ export function ExportToolbar({ pins, campaignName, csvData }: ExportToolbarProp
         const headers = Object.keys(csvData[0]);
         headers.push('generated_image_url');
 
-        // Build CSV content
-        const rows = csvData.map((row, index) => {
-            const pin = pins.find((p) => p.rowIndex === index);
-            const imageUrl = pin?.imageUrl || '';
-            const values = headers.map((h) => {
-                const value = h === 'generated_image_url' ? imageUrl : row[h] || '';
-                // Escape quotes and wrap in quotes if contains comma
-                if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-                    return `"${value.replace(/"/g, '""')}"`;
-                }
-                return value;
-            });
-            return values.join(',');
-        });
+        let rowsData: string[] = [];
 
-        const csvContent = [headers.join(','), ...rows].join('\n');
+        if (isEntireCampaignSelected && totalCount && totalCount > pins.length) {
+            // Fetch all data for CSV
+            const fetchPromise = new Promise<{ data: any[] }>(async (resolve, reject) => {
+                try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const token = session?.access_token;
+                    
+                    if (!token) {
+                         reject(new Error('Authentication required'));
+                         return;
+                    }
+
+                    const response = await fetch(`/api/generated-pins?campaign_id=${window.location.pathname.split('/')[3]}&fields=image_url,data_row&limit=10000`, {
+                         headers: {
+                             'Authorization': `Bearer ${token}`
+                         }
+                    });
+                    if (!response.ok) {
+                        reject(new Error(`HTTP error ${response.status}`));
+                        return;
+                    }
+                    const result = await response.json();
+                    if (!result.success || !result.data) {
+                        reject(new Error('API returned error'));
+                        return;
+                    }
+                    resolve(result);
+                } catch (err) {
+                    reject(err);
+                }
+            });
+
+            toast.promise(fetchPromise, {
+                loading: 'Fetching all data for CSV...',
+                success: 'Data prepared',
+                error: (err) => `Failed: ${err.message}`
+            });
+
+             try {
+                const result = await fetchPromise;
+                // Create a map of rowIndex -> imageUrl
+                const urlMap = new Map<number, string>();
+                result.data.forEach((p: any, index: number) => {
+                        const rIndex = p.data_row?.rowIndex ?? index; // Fallback
+                        if (p.image_url) urlMap.set(rIndex, p.image_url);
+                });
+
+                rowsData = csvData.map((row, index) => {
+                    const imageUrl = urlMap.get(index) || '';
+                    const values = headers.map((h) => {
+                        const value = h === 'generated_image_url' ? imageUrl : row[h] || '';
+                        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+                            return `"${value.replace(/"/g, '""')}"`;
+                        }
+                        return value;
+                    });
+                    return values.join(',');
+                });
+             } catch (error) {
+                 console.error('CSV export failed:', error);
+                 return;
+             }
+        } else {
+            // Standard client-side export
+            rowsData = csvData.map((row, index) => {
+                const pin = pins.find((p) => p.rowIndex === index);
+                const imageUrl = pin?.imageUrl || '';
+                const values = headers.map((h) => {
+                    const value = h === 'generated_image_url' ? imageUrl : row[h] || '';
+                    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+                        return `"${value.replace(/"/g, '""')}"`;
+                    }
+                    return value;
+                });
+                return values.join(',');
+            });
+        }
+
+        const csvContent = [headers.join(','), ...rowsData].join('\n');
 
         // Download
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -189,8 +320,13 @@ export function ExportToolbar({ pins, campaignName, csvData }: ExportToolbarProp
             </button>
 
             {/* Stats */}
-            <div className="ml-auto text-sm text-gray-500">
-                {completedPins.length} of {pins.length} pins ready
+            <div className="ml-auto flex flex-col items-end text-sm text-gray-500">
+                <span>{completedPins.length} of {pins.length} loaded pins ready</span>
+                {totalCount !== undefined && totalCount > pins.length && (
+                   <span className="text-xs text-orange-600 animate-pulse font-medium">
+                       ({totalCount - pins.length} more in database - Load more to export)
+                   </span>
+                )}
             </div>
         </div>
     );

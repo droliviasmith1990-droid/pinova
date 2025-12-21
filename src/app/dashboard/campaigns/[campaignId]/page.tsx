@@ -41,8 +41,20 @@ export default function CampaignDetailPage() {
     } | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [generatedPins, setGeneratedPins] = useState<PinCardData[]>([]);
-    const [showSettings, setShowSettings] = useState(false);
-    const [settings, setSettings] = useState<GenerationSettings>(DEFAULT_GENERATION_SETTINGS);
+    const [showSettings, setShowSettings] = useState(true);
+    const [settings, setSettings] = useState<GenerationSettings>(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const saved = localStorage.getItem('pin-generator-settings');
+                if (saved) {
+                    return { ...DEFAULT_GENERATION_SETTINGS, ...JSON.parse(saved) };
+                }
+            } catch (e) {
+                console.warn('Failed to load settings from localStorage', e);
+            }
+        }
+        return DEFAULT_GENERATION_SETTINGS;
+    });
     const [previewPin, setPreviewPin] = useState<PinCardData | null>(null);
 
     // Bulk selection state
@@ -151,7 +163,8 @@ export default function CampaignDetailPage() {
                     .filter((pin: Record<string, unknown>) => pin.image_url)
                     .map((pin: Record<string, unknown>, index: number) => ({
                         id: (pin.id as string) || `pin-${index}`,
-                        rowIndex: pin.data_row ? (pin.data_row as any).rowIndex ?? index : index, 
+                        // FIX: Use global index fallback if data_row.rowIndex is missing to prevent duplicate numbers on different pages
+                        rowIndex: pin.data_row ? (pin.data_row as any).rowIndex ?? ((currentPage - 1) * pagination.limit + index) : ((currentPage - 1) * pagination.limit + index), 
                         imageUrl: pin.image_url as string,
                         status: (pin.status as any) || 'completed',
                         errorMessage: pin.error_message as string | undefined,
@@ -289,13 +302,55 @@ export default function CampaignDetailPage() {
         });
     }, []);
 
-    // Select all pins
+    // Filter and Pagination State
+    const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'failed'>('all');
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 24;
+    const [selectAllScope, setSelectAllScope] = useState<'page' | 'all'>('page');
+
+    // Derived state for filtering and pagination
+    const filteredPins = React.useMemo(() => {
+        return generatedPins.filter(pin => {
+            if (filterStatus === 'all') return true;
+            return pin.status === filterStatus;
+        });
+    }, [generatedPins, filterStatus]);
+
+    const totalPages = Math.ceil(filteredPins.length / ITEMS_PER_PAGE);
+    
+    // Reset to page 1 when filter changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterStatus]);
+
+    const displayedPins = React.useMemo(() => {
+        const start = (currentPage - 1) * ITEMS_PER_PAGE;
+        return filteredPins.slice(start, start + ITEMS_PER_PAGE);
+    }, [filteredPins, currentPage]);
+
+    // Calculate counts for tabs
+    const counts = React.useMemo(() => ({
+        all: generatedPins.length,
+        completed: generatedPins.filter(p => p.status === 'completed').length,
+        failed: generatedPins.filter(p => p.status === 'failed').length
+    }), [generatedPins]);
+
+    // Select all pins (filtered)
     const handleSelectAll = useCallback(() => {
-        setSelectedPinIds(new Set(generatedPins.map(p => p.id)));
-    }, [generatedPins]);
+        setSelectAllScope('page');
+        setSelectedPinIds(new Set(filteredPins.map(p => p.id)));
+    }, [filteredPins]);
+
+    // Select entire campaign from DB
+    const handleSelectEntireCampaign = useCallback(() => {
+        setSelectAllScope('all');
+        // Visually select all loaded pins too so UI looks consistent
+        setSelectedPinIds(new Set(filteredPins.map(p => p.id))); 
+    }, [filteredPins]);
 
     // Deselect all pins
     const handleDeselectAll = useCallback(() => {
+        setSelectAllScope('page');
         setSelectedPinIds(new Set());
     }, []);
 
@@ -315,6 +370,42 @@ export default function CampaignDetailPage() {
 
     // Confirm delete
     const handleConfirmDelete = useCallback(async () => {
+        // If "Delete All from DB" mode is active
+        if (selectAllScope === 'all') {
+             setIsDeleting(true);
+             // Fake progress for improved UX or use infinite
+             setDeleteProgress({ current: 0, total: pagination.total });
+
+             try {
+                 const response = await fetch(`/api/generated-pins?campaign_id=${campaignId}`, { method: 'DELETE' });
+                 const data = await response.json();
+
+                 if (response.ok && data.success) {
+                     toast.success(`All generated pins deleted successfully`);
+                     setGeneratedPins([]);
+                     setSelectedPinIds(new Set());
+                     setSelectAllScope('page');
+                     
+                     // Reset local pagination/counts
+                     setPagination(prev => ({ ...prev, total: 0 }));
+                     
+                     // Reload to confirm empty state
+                     await loadGeneratedPins(true);
+                 } else {
+                     throw new Error(data.error || 'Failed to delete all pins');
+                 }
+             } catch (error) {
+                 console.error('Bulk delete error:', error);
+                 toast.error('Failed to delete all pins');
+             } finally {
+                 setIsDeleting(false);
+                 setShowDeleteModal(false);
+                 setPinToDelete(null);
+                 setDeleteProgress({ current: 0, total: 0 });
+             }
+             return;
+        }
+
         const idsToDelete = pinToDelete ? [pinToDelete.id] : Array.from(selectedPinIds);
         if (idsToDelete.length === 0) return;
 
@@ -369,7 +460,7 @@ export default function CampaignDetailPage() {
             setShowDeleteModal(false);
             setPinToDelete(null);
         }
-    }, [pinToDelete, selectedPinIds, loadGeneratedPins]);
+    }, [pinToDelete, selectedPinIds, loadGeneratedPins, selectAllScope, campaignId, pagination.total]);
 
     if (authLoading || isLoading) {
         return (
@@ -440,7 +531,7 @@ export default function CampaignDetailPage() {
                             csvRowCount={csvData.length}
                             createdAt={campaign.created_at}
                             status={campaign.status}
-                            generatedCount={generatedPins.length}
+                            generatedCount={Math.max(generatedPins.length, pagination.total)}
                         />
 
                         {/* Settings Panel */}
@@ -467,7 +558,7 @@ export default function CampaignDetailPage() {
                             initialSettings={settings}
                             initialProgress={campaign.current_index || 0}
                             initialStatus={campaign.status}
-                            generatedCount={generatedPins.length}
+                            generatedCount={Math.max(generatedPins.length, pagination.total)}
                             onPinGenerated={handlePinGenerated}
                             onProgressUpdate={handleProgressUpdate}
                             onStatusChange={handleStatusChange}
@@ -492,37 +583,145 @@ export default function CampaignDetailPage() {
                                 pins={generatedPins}
                                 campaignName={campaign.name}
                                 csvData={csvData}
+                                totalCount={pagination.total}
+                                isEntireCampaignSelected={selectAllScope === 'all'}
                             />
                         )}
 
-                        {/* Pins Grid */}
+                        {/* Pins Grid with Filter Tabs and Pagination */}
                         {generatedPins.length > 0 && (
                             <div className="bg-white border border-gray-200 rounded-xl p-6">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="font-semibold text-gray-900">
-                                        Generated Pins ({generatedPins.length})
-                                    </h3>
-                                    {selectedPinIds.size > 0 && (
-                                        <span className="text-sm text-blue-600 font-medium">
-                                            {selectedPinIds.size} selected
-                                        </span>
-                                    )}
+                                <div className="flex flex-col gap-6 mb-6">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="font-semibold text-gray-900">
+                                            Generated Pins
+                                        </h3>
+                                        {selectedPinIds.size > 0 && (
+                                            <span className="text-sm text-blue-600 font-medium">
+                                                {selectedPinIds.size} selected
+                                            </span>
+                                        )}
+                                    </div>
+                                    
+                                    {/* Filter Tabs */}
+                                    <div className="flex items-center gap-2 p-1 bg-gray-100 rounded-lg w-fit">
+                                        <button
+                                            onClick={() => setFilterStatus('all')}
+                                            className={cn(
+                                                "px-4 py-1.5 rounded-md text-sm font-medium transition-all",
+                                                filterStatus === 'all'
+                                                    ? "bg-white text-gray-900 shadow-sm"
+                                                    : "text-gray-500 hover:text-gray-700"
+                                            )}
+                                        >
+                                            All <span className="ml-1 text-xs opacity-60">({counts.all})</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setFilterStatus('completed')}
+                                            className={cn(
+                                                "px-4 py-1.5 rounded-md text-sm font-medium transition-all",
+                                                filterStatus === 'completed'
+                                                    ? "bg-white text-green-700 shadow-sm"
+                                                    : "text-gray-500 hover:text-gray-700"
+                                            )}
+                                        >
+                                            Success <span className="ml-1 text-xs opacity-60">({counts.completed})</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setFilterStatus('failed')}
+                                            className={cn(
+                                                "px-4 py-1.5 rounded-md text-sm font-medium transition-all",
+                                                filterStatus === 'failed'
+                                                    ? "bg-white text-red-700 shadow-sm"
+                                                    : "text-gray-500 hover:text-gray-700"
+                                            )}
+                                        >
+                                            Failed 
+                                            {counts.failed > 0 && (
+                                                <span className="ml-2 px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-bold">
+                                                    {counts.failed}
+                                                </span>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
-                                <PinsGrid
-                                    pins={generatedPins}
-                                    selectedIds={selectedPinIds}
-                                    onSelectPin={handleSelectPin}
-                                    showSelection={selectedPinIds.size > 0}
-                                    onPreview={handlePreview}
-                                    onDeletePin={handleDeletePin}
-                                />
+
+                                {displayedPins.length > 0 ? (
+                                    <>
+                                        <PinsGrid
+                                            pins={displayedPins}
+                                            selectedIds={selectedPinIds}
+                                            onSelectPin={handleSelectPin}
+                                            showSelection={selectedPinIds.size > 0}
+                                            onPreview={handlePreview}
+                                            onDeletePin={handleDeletePin}
+                                        />
+                                        
+                                        {/* Pagination Controls */}
+                                        {totalPages > 1 && (
+                                            <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-100">
+                                                <p className="text-sm text-gray-500">
+                                                    Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, filteredPins.length)} of {filteredPins.length} results
+                                                </p>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                        disabled={currentPage === 1}
+                                                        className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    >
+                                                        Previous
+                                                    </button>
+                                                    <div className="flex items-center gap-1">
+                                                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                                            // Logic to show generic page numbers centered around current
+                                                            let p = i + 1;
+                                                            if (totalPages > 5) {
+                                                                if (currentPage > 3) p = currentPage - 2 + i;
+                                                                if (p > totalPages) p = totalPages - (4 - i);
+                                                            }
+                                                            
+                                                            return (
+                                                                <button
+                                                                    key={p}
+                                                                    onClick={() => setCurrentPage(p)}
+                                                                    className={cn(
+                                                                        "w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-colors",
+                                                                        currentPage === p
+                                                                            ? "bg-blue-600 text-white"
+                                                                            : "text-gray-600 hover:bg-gray-100"
+                                                                    )}
+                                                                >
+                                                                    {p}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                                        disabled={currentPage === totalPages}
+                                                        className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    >
+                                                        Next
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="py-12 text-center">
+                                        <p className="text-gray-500">No pins found matching this filter.</p>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* Pagination / Load More */}
-                {generatedPins.length > 0 && pagination.hasMore && (
+                {/* DB Load More (Only if we have more in DB than loaded in memory, though currently we load all for batch) */}
+                {/* Note: With client pagination, we assume generatedPins contains the relevant batch. 
+                    If DB has deeper pagination, this button fetches more into generatedPins, 
+                    and then client pagination handles the display. */}
+                {generatedPins.length < pagination.total && generatedPins.length > 0 && pagination.hasMore && (
                     <div className="flex justify-center mt-8 pb-12">
                         <button
                             onClick={() => loadGeneratedPins(false)}
@@ -530,7 +729,7 @@ export default function CampaignDetailPage() {
                             className="bg-white border border-gray-300 text-gray-700 font-medium py-2 px-6 rounded-full shadow-sm hover:bg-gray-50 disabled:opacity-50 transition-all flex items-center gap-2"
                         >
                             {pagination.isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                            {pagination.isLoading ? 'Loading...' : `Load More (${generatedPins.length} of ${pagination.total})`}
+                            {pagination.isLoading ? 'Loading...' : `Load More from DB (${pagination.total - generatedPins.length} remaining)`}
                         </button>
                     </div>
                 )}
@@ -539,11 +738,14 @@ export default function CampaignDetailPage() {
             {/* Bulk Selection Action Bar */}
             <SelectionActionBar
                 selectedCount={selectedPinIds.size}
-                totalCount={generatedPins.length}
+                totalCount={pagination.total}
+                filteredCount={filteredPins.length}
                 onSelectAll={handleSelectAll}
+                onSelectEntireCampaign={handleSelectEntireCampaign}
                 onDeselectAll={handleDeselectAll}
                 onDeleteSelected={handleDeleteSelected}
                 isDeleting={isDeleting}
+                isEntireCampaignSelected={selectAllScope === 'all'}
             />
 
             {/* Delete Confirmation Modal */}
@@ -551,11 +753,13 @@ export default function CampaignDetailPage() {
                 isOpen={showDeleteModal}
                 onClose={() => { setShowDeleteModal(false); setPinToDelete(null); }}
                 onConfirm={handleConfirmDelete}
-                count={pinToDelete ? 1 : selectedPinIds.size}
+                count={pinToDelete ? 1 : (selectAllScope === 'all' ? pagination.total : selectedPinIds.size)}
                 previewImages={
                     pinToDelete
                         ? [pinToDelete.imageUrl]
-                        : generatedPins.filter(p => selectedPinIds.has(p.id)).map(p => p.imageUrl)
+                        : (selectAllScope === 'all' 
+                            ? generatedPins.slice(0, 4).map(p => p.imageUrl)
+                            : generatedPins.filter(p => selectedPinIds.has(p.id)).map(p => p.imageUrl))
                 }
                 isDeleting={isDeleting}
                 deleteProgress={deleteProgress}

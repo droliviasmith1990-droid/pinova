@@ -69,19 +69,17 @@ async function loadImageToCanvas(url: string, options: Partial<fabric.ImageProps
                 }
             }
             
-            // Add browser-like headers to bypass CDN restrictions (403 errors)
-            // SIMPLIFIED: Removing Sec-Fetch headers as they can trigger Cloudflare if TLS fingerprint doesn't match
+            // Add browser-like headers to bypass CDN restrictions
+            // Note: Some CDNs (like Midjourney) block server-side requests regardless of headers
             const response = await fetch(fetchUrl, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                    'Accept-Encoding': 'gzip, deflate, br',
                 },
             });
             if (!response.ok) {
-                const errorText = await response.text().catch(() => 'No error text');
-                console.warn(`[Engine] Image fetch failed (${response.status} ${response.statusText}): ${fetchUrl} - ${errorText.substring(0, 100)}`);
-                throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+                console.warn(`[Engine] Image fetch failed (${response.status}): ${fetchUrl.substring(0, 80)}`);
+                throw new Error(`Failed to fetch image: ${response.status}`);
             }
             const arrayBuffer = await response.arrayBuffer();
             const base64 = Buffer.from(arrayBuffer).toString('base64');
@@ -602,7 +600,7 @@ export async function exportToBlob(canvas: fabric.StaticCanvas | fabric.Canvas, 
         format,
         quality,
         multiplier,
-        enableRetinaScaling: true
+        enableRetinaScaling: false // FIX: Disable retina scaling to ensure output dimensions match requested size * multiplier, regardless of user's screen DPI
     });
     
     const response = await fetch(dataUrl);

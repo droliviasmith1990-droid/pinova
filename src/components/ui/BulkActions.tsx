@@ -7,42 +7,73 @@ import { cn } from '@/lib/utils';
 // ============================================
 // Selection Action Bar
 // ============================================
+// ============================================
+// Selection Action Bar
+// ============================================
 interface SelectionActionBarProps {
     selectedCount: number;
     totalCount: number;
+    filteredCount?: number; // Count of items currently in the view (filtered/paginated)
     onSelectAll: () => void;
+    onSelectEntireCampaign?: () => void; // Handler to select EVERYTHING in DB
     onDeselectAll: () => void;
     onDeleteSelected: () => void;
     isDeleting?: boolean;
+    isEntireCampaignSelected?: boolean;
 }
 
 export function SelectionActionBar({
     selectedCount,
     totalCount,
+    filteredCount = 0,
     onSelectAll,
+    onSelectEntireCampaign,
     onDeselectAll,
     onDeleteSelected,
     isDeleting = false,
+    isEntireCampaignSelected = false,
 }: SelectionActionBarProps) {
-    if (selectedCount === 0) return null;
+    if (selectedCount === 0 && !isEntireCampaignSelected) return null;
+
+    // Show "Select query" prompt if we selected all visible but there are more in DB
+    const showSelectEntirePrompt = !isEntireCampaignSelected && 
+                                   filteredCount > 0 && 
+                                   selectedCount === filteredCount && 
+                                   totalCount > filteredCount;
 
     return (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 animate-in slide-in-from-bottom-4 duration-200">
+            
+            {/* Prompt to select entire database */}
+            {showSelectEntirePrompt && (
+                <div className="bg-blue-50 text-blue-900 px-4 py-2 rounded-lg shadow-lg text-sm border border-blue-100 animate-in fade-in slide-in-from-bottom-2">
+                    All {selectedCount} pins on this page are selected.
+                    <button 
+                        onClick={onSelectEntireCampaign}
+                        className="ml-2 font-bold hover:underline text-blue-700"
+                    >
+                        Select all {totalCount} pins in campaign
+                    </button>
+                </div>
+            )}
+
             <div className="bg-gray-900 text-white rounded-xl shadow-2xl px-4 py-3 flex items-center gap-4">
                 {/* Selected count */}
                 <div className="flex items-center gap-2 pr-4 border-r border-gray-700">
                     <CheckSquare className="w-5 h-5 text-blue-400" />
-                    <span className="font-medium">{selectedCount} selected</span>
+                    <span className="font-medium">
+                        {isEntireCampaignSelected ? `All ${totalCount} selected` : `${selectedCount} selected`}
+                    </span>
                 </div>
 
                 {/* Actions */}
                 <div className="flex items-center gap-2">
-                    {selectedCount < totalCount ? (
+                    {!isEntireCampaignSelected && selectedCount < (filteredCount || totalCount) ? (
                         <button
                             onClick={onSelectAll}
                             className="px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
                         >
-                            Select All ({totalCount})
+                            Select All ({filteredCount || totalCount})
                         </button>
                     ) : (
                         <button

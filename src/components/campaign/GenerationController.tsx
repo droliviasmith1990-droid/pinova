@@ -60,7 +60,7 @@ const QUALITY_MAP: Record<GenerationSettings['quality'], number> = {
 // Default settings
 export const DEFAULT_GENERATION_SETTINGS: GenerationSettings = {
     batchSize: 10,
-    quality: 'normal',
+    quality: 'draft', // Changed to 'draft' (1x) as requested
     pauseEnabled: true,
     renderMode: 'auto',
 };
@@ -106,7 +106,31 @@ export function GenerationController({
     onProgressUpdate,
     onStatusChange,
 }: GenerationControllerProps) {
-    const [settings] = useState<GenerationSettings>(initialSettings);
+    // Initialize settings from localStorage if available, falling back to initialSettings
+    const [settings, setSettings] = useState<GenerationSettings>(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const saved = localStorage.getItem('pin-generator-settings');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    // Merge with defaults to ensure all fields exist
+                    return { ...DEFAULT_GENERATION_SETTINGS, ...parsed };
+                }
+            } catch (error) {
+                console.warn('Failed to load settings from localStorage:', error);
+            }
+        }
+        return initialSettings;
+    });
+    
+    // Sync internal settings with initialSettings prop changes
+    // This allows the parent component to control settings updates
+    useEffect(() => {
+        if (initialSettings) {
+            setSettings(prev => ({ ...prev, ...initialSettings }));
+        }
+    }, [initialSettings]);
+
     const [status, setStatus] = useState(initialStatus);
     const [progress, setProgress] = useState<GenerationProgress>(() => {
         const actualProgress = generatedCount > 0 ? generatedCount : initialProgress;
@@ -126,6 +150,7 @@ export function GenerationController({
             currentPinIndex: 0,
         };
     });
+
     const [isPausing, setIsPausing] = useState(false);
     const [activeMode, setActiveMode] = useState<'client' | 'server' | null>(null);
     
@@ -216,6 +241,7 @@ export function GenerationController({
         rowIndex: number
     ): Promise<{ blob: Blob; fileName: string; rowIndex: number }> => {
         // Acquire canvas from pool (Phase 2.3 optimization)
+        const tStart = performance.now();
         const canvas = canvasPoolRef.current.acquire(canvasSize.width, canvasSize.height);
 
         try {
@@ -227,6 +253,7 @@ export function GenerationController({
                 rowData,
                 fieldMapping as FieldMapping
             );
+            const tRender = performance.now();
 
             // Export to blob - OPTIMIZED: Use JPEG directly (faster, smaller)
             // JPEG 0.9 is visually equivalent to PNG but 5-10x smaller
@@ -236,6 +263,12 @@ export function GenerationController({
                 format: 'jpeg', 
                 quality: 0.9 
             });
+            const tBlob = performance.now();
+
+            // Log detailed timings
+            if (DEBUG) {
+                console.log(`[Perf] Pin ${rowIndex}: Render ${(tRender - tStart).toFixed(1)}ms, Blob ${(tBlob - tRender).toFixed(1)}ms`);
+            }
 
             return {
                 blob,
@@ -508,49 +541,100 @@ export function GenerationController({
                         renderResults = clientResults;
                     }
                 } else {
-                    // CLIENT MODE: Render all pins in parallel
-                    const renderPromises = csvData.slice(batchStart, batchEnd).map(async (rowData, i) => {
+                    // CLIENT MODE: Render, Upload, and Save in parallel pipelines
+                    // This pipelines the process so Uploads happen immediately after Rendering,
+                    // hiding latency and improving overall throughput.
+                    const pipelinePromises = csvData.slice(batchStart, batchEnd).map(async (rowData, i) => {
                         const rowIndex = batchStart + i;
                         try {
+                            // 1. Render
                             const pin = await renderPinClient(rowData, rowIndex);
-                            return {
-                                success: true,
-                                pinNumber: rowIndex,
-                                blob: pin.blob,
-                                fileName: pin.fileName,
-                                rowData,
-                            };
+                            
+                            // 2. Upload immediately
+                            const formData = new FormData();
+                            formData.append('file', pin.blob, pin.fileName);
+                            formData.append('campaign_id', campaignId);
+                            formData.append('row_index', rowIndex.toString());
+
+                            const tUploadStart = performance.now();
+                            const uploadResponse = await fetch('/api/upload-pin', {
+                                method: 'POST',
+                                body: formData,
+                            });
+                            const tUploadEnd = performance.now();
+                            if (DEBUG) {
+                                console.log(`[Perf] Pin ${rowIndex}: Upload ${(tUploadEnd - tUploadStart).toFixed(1)}ms`);
+                            }
+
+                            const uploadResult = await uploadResponse.json();
+                            
+                            if (!uploadResult.url) {
+                                throw new Error(uploadResult.error || 'Upload failed');
+                            }
+
+                            // 3. Save to DB immediately
+                            await fetch('/api/generated-pins', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({
+                                    campaign_id: campaignId,
+                                    user_id: userId,
+                                    image_url: uploadResult.url,
+                                    data_row: rowData,
+                                    status: 'completed',
+                                }),
+                            });
+
+                            // 4. Update UI
+                            onPinGenerated({
+                                id: `${campaignId}-${rowIndex}`,
+                                rowIndex: rowIndex,
+                                imageUrl: uploadResult.url,
+                                status: 'completed',
+                                csvData: rowData,
+                            });
+
+                            return { success: true, pinNumber: rowIndex, url: uploadResult.url, rowData };
+
                         } catch (error) {
-                            console.error(`[Batch] Failed to render pin ${rowIndex}:`, error);
+                            console.error(`[Pipeline] Pin ${rowIndex} failed:`, error);
                             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                             errors.push({ rowIndex, error: errorMessage });
-                            return {
-                                success: false,
-                                pinNumber: rowIndex,
-                                error: errorMessage,
-                                rowData,
-                            };
+                            
+                            // Report failure
+                            onPinGenerated({
+                                id: `${campaignId}-${rowIndex}`,
+                                rowIndex: rowIndex,
+                                imageUrl: '',
+                                status: 'failed',
+                                errorMessage: errorMessage,
+                                csvData: rowData,
+                            });
+                            
+                            return { success: false, pinNumber: rowIndex, error: errorMessage, rowData };
                         }
                     });
-                    renderResults = await Promise.all(renderPromises);
+
+                    // Wait for all pipelines in this batch to complete
+                    renderResults = await Promise.all(pipelinePromises);
                 }
 
                 if (!isMountedRef.current) return;
                 if (shouldPauseRef.current) break;
 
                 // ============================================
-                // Step 2: Handle results based on mode
-                // - Server mode: Results already have URLs (skip upload, just save to DB)  
-                // - Client mode: Results have blobs (need upload, then save to DB)
+                // Step 2: Handle Server Results (Client results already handled in pipeline)
                 // ============================================
                 
-                // Separate server results (already have URLs) from client results (need upload)
-                const serverResults = renderResults.filter(r => r.success && r.url);
-                const clientRenders = renderResults.filter(r => r.success && r.blob);
+                // Server mode results still need DB saving here if they weren't handled above
+                // Note: The new pipeline logic handles Client Mode.
+                // Server mode logic is separate (lines 518) and returns objects with {success, url} but NOT saved to DB.
                 
-                // Handle server results - already uploaded, just save to DB
-                if (serverResults.length > 0) {
-                    const dbPromises = serverResults.map(async (result) => {
+                const severModeResultsToSave = renderResults.filter(r => r.success && r.url && renderMode === 'server');
+                
+                if (severModeResultsToSave.length > 0) {
+                    const dbPromises = severModeResultsToSave.map(async (result) => {
                         try {
                             await fetch('/api/generated-pins', {
                                 method: 'POST',
@@ -578,85 +662,7 @@ export function GenerationController({
                     await Promise.all(dbPromises);
                 }
 
-                // Handle client results - need to upload first
-                const successfulRenders = clientRenders;
-
-                if (successfulRenders.length > 0) {
-                    // Upload all pins in parallel using FormData (avoids slow base64 conversion)
-                    const uploadPromises = successfulRenders.map(async (render) => {
-                        const formData = new FormData();
-                        formData.append('file', render.blob!, render.fileName);
-                        formData.append('campaign_id', campaignId);
-                        formData.append('row_index', render.pinNumber.toString());
-
-                        try {
-                            const uploadResponse = await fetch('/api/upload-pin', {
-                                method: 'POST',
-                                body: formData,
-                            });
-                            const uploadResult = await uploadResponse.json();
-                            return {
-                                pinNumber: render.pinNumber,
-                                success: !!uploadResult.url,
-                                url: uploadResult.url,
-                                error: uploadResult.error,
-                            };
-                        } catch (error) {
-                            return {
-                                pinNumber: render.pinNumber,
-                                success: false,
-                                error: error instanceof Error ? error.message : 'Upload failed',
-                            };
-                        }
-                    });
-
-                    const uploadResults = await Promise.all(uploadPromises);
-
-                    // Process each upload result - save to DB in parallel
-                    const dbSavePromises = uploadResults.map(async (uploadResult) => {
-                        if (uploadResult.success && uploadResult.url) {
-                            // Save to database
-                            try {
-                                await fetch('/api/generated-pins', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    credentials: 'include',
-                                    body: JSON.stringify({
-                                        campaign_id: campaignId,
-                                        user_id: userId,
-                                        image_url: uploadResult.url,
-                                        data_row: csvData[uploadResult.pinNumber],
-                                        status: 'completed',
-                                    }),
-                                });
-
-                                // Report successful pin to UI
-                                onPinGenerated({
-                                    id: `${campaignId}-${uploadResult.pinNumber}`,
-                                    rowIndex: uploadResult.pinNumber,
-                                    imageUrl: uploadResult.url,
-                                    status: 'completed',
-                                    csvData: csvData[uploadResult.pinNumber],
-                                });
-                            } catch (dbError) {
-                                console.error(`[Batch] Failed to save pin ${uploadResult.pinNumber} to DB:`, dbError);
-                            }
-                        } else {
-                            // Upload failed for this pin
-                            errors.push({ rowIndex: uploadResult.pinNumber, error: uploadResult.error || 'Upload failed' });
-                            onPinGenerated({
-                                id: `${campaignId}-${uploadResult.pinNumber}`,
-                                rowIndex: uploadResult.pinNumber,
-                                imageUrl: '',
-                                status: 'failed',
-                                errorMessage: uploadResult.error || 'Upload failed',
-                                csvData: csvData[uploadResult.pinNumber],
-                            });
-                        }
-                    });
-
-                    await Promise.all(dbSavePromises);
-                }
+                // Client results are already saved in the pipeline above. No further action needed.
 
                 // ============================================
                 // Step 3: Handle failed renders

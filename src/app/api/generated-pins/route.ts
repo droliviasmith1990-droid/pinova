@@ -223,6 +223,8 @@ export async function GET(request: NextRequest) {
         // Verify user session for RLS
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
+            console.warn('[generated-pins] Auth failed:', authError?.message || 'No user session found');
+            console.warn('[generated-pins] Cookies received:', request.headers.get('cookie') ? 'Yes' : 'No');
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -241,14 +243,24 @@ export async function GET(request: NextRequest) {
         const limit = parseInt(searchParams.get('limit') || '50');
         const offset = (page - 1) * limit;
 
+        const fields = searchParams.get('fields') || '*';
+
         // RLS will automatically filter to user's own data
-        log(`[generated-pins] Fetching pins (page ${page}, limit ${limit})...`);
-        const { data, error, count } = await supabase
+        log(`[generated-pins] Fetching pins (page ${page}, limit ${limit}, fields ${fields})...`);
+        
+        let query = supabase
             .from('generated_pins')
-            .select('*', { count: 'exact' })
+            .select(fields === '*' ? '*' : fields, { count: 'exact' })
             .eq('campaign_id', campaignId)
-            .order('created_at', { ascending: true })
-            .range(offset, offset + limit - 1);
+            .order('created_at', { ascending: true });
+
+        // Apply pagination only if not requesting all (limit=-1 or very high)
+        // Or strictly adhere to limit
+        if (limit > 0) {
+            query = query.range(offset, offset + limit - 1);
+        }
+            
+        const { data, error, count } = await query;
 
         if (error) {
             console.error('[generated-pins] Fetch error:', error);
