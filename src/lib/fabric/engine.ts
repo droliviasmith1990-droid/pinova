@@ -70,12 +70,18 @@ async function loadImageToCanvas(url: string, options: Partial<fabric.ImageProps
             }
             
             // Add browser-like headers to bypass CDN restrictions (403 errors)
+            // NOTE: Removing specific Referer as some CDNs (like Midjourney) block hotlinking if Referer is present but not allow-listed
+            // Adding Sec-Fetch headers to simulate a real browser image request
             const response = await fetch(fetchUrl, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.9',
-                    'Referer': 'https://www.midjourney.com/',
+                    'Sec-Fetch-Dest': 'image',
+                    'Sec-Fetch-Mode': 'no-cors',
+                    'Sec-Fetch-Site': 'cross-site',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
                 },
             });
             if (!response.ok) {
