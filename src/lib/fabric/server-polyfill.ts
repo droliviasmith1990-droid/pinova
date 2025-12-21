@@ -4,12 +4,16 @@
  * Fabric.js 6.x requires document, window, Image to exist even on server.
  * This polyfill creates minimal implementations using the 'canvas' npm package.
  * 
- * IMPORTANT: Must be called BEFORE importing fabric!
+ * IMPORTANT: Call setupFabricServerPolyfills() BEFORE using fabric in API routes!
+ * Do NOT auto-execute - breaks Next.js static generation.
  */
 
 let polyfillsApplied = false;
 
-export function setupFabricServerPolyfills() {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const g = global as any;
+
+export function setupFabricServerPolyfills(): void {
     // Only run once
     if (polyfillsApplied) {
         return;
@@ -28,26 +32,30 @@ export function setupFabricServerPolyfills() {
         const { createCanvas, Image: CanvasImage, ImageData } = require('canvas');
 
         // Polyfill global.document
-        if (typeof (global as any).document === 'undefined') {
-            (global as any).document = {
+        if (typeof g.document === 'undefined') {
+            g.document = {
                 createElement: (tagName: string) => {
                     if (tagName === 'canvas') {
-                        // Return a real canvas from the canvas package
                         return createCanvas(300, 300);
                     }
                     if (tagName === 'img') {
                         return new CanvasImage();
                     }
                     // Return minimal mock for other elements
-                    return {
+                    const mockElement = {
                         getContext: () => null,
                         addEventListener: () => {},
                         removeEventListener: () => {},
                         style: {},
+                        appendChild: (child: unknown) => child,
+                        removeChild: (child: unknown) => child,
+                        setAttribute: () => {},
+                        getAttribute: () => null,
                     };
+                    return mockElement;
                 },
                 createElementNS: (_ns: string, tagName: string) => {
-                    return (global as any).document.createElement(tagName);
+                    return g.document.createElement(tagName);
                 },
                 documentElement: {
                     style: {},
@@ -56,16 +64,21 @@ export function setupFabricServerPolyfills() {
                 querySelector: () => null,
                 querySelectorAll: () => [],
                 body: {
-                    appendChild: () => {},
-                    removeChild: () => {},
+                    appendChild: (child: unknown) => child,
+                    removeChild: (child: unknown) => child,
+                    style: {},
+                },
+                head: {
+                    appendChild: (child: unknown) => child,
+                    removeChild: (child: unknown) => child,
                 },
             };
         }
 
         // Polyfill global.window
-        if (typeof (global as any).window === 'undefined') {
-            (global as any).window = {
-                document: (global as any).document,
+        if (typeof g.window === 'undefined') {
+            g.window = {
+                document: g.document,
                 devicePixelRatio: 1,
                 navigator: {
                     userAgent: 'Node.js',
@@ -91,23 +104,23 @@ export function setupFabricServerPolyfills() {
         }
 
         // Polyfill global.Image
-        if (typeof (global as any).Image === 'undefined') {
-            (global as any).Image = CanvasImage;
+        if (typeof g.Image === 'undefined') {
+            g.Image = CanvasImage;
         }
 
         // Polyfill global.ImageData
-        if (typeof (global as any).ImageData === 'undefined') {
-            (global as any).ImageData = ImageData;
+        if (typeof g.ImageData === 'undefined') {
+            g.ImageData = ImageData;
         }
 
         // Polyfill HTMLCanvasElement for Fabric detection
-        if (typeof (global as any).HTMLCanvasElement === 'undefined') {
-            (global as any).HTMLCanvasElement = class HTMLCanvasElement {};
+        if (typeof g.HTMLCanvasElement === 'undefined') {
+            g.HTMLCanvasElement = class HTMLCanvasElement {};
         }
 
         // Polyfill HTMLImageElement for Fabric detection
-        if (typeof (global as any).HTMLImageElement === 'undefined') {
-            (global as any).HTMLImageElement = CanvasImage;
+        if (typeof g.HTMLImageElement === 'undefined') {
+            g.HTMLImageElement = CanvasImage;
         }
 
         polyfillsApplied = true;
@@ -115,9 +128,9 @@ export function setupFabricServerPolyfills() {
 
     } catch (error) {
         console.error('[Polyfill] ❌ Failed to setup polyfills:', error);
-        throw new Error('Canvas package not available. Server-side rendering requires the canvas package.');
+        // Don't throw - just log and let the API route handle the error
     }
 }
 
-// Auto-execute on import (ensures polyfills are ready before fabric loads)
-setupFabricServerPolyfills();
+// NOTE: Do NOT auto-execute here! It breaks Next.js static generation.
+// Call setupFabricServerPolyfills() inside the API route handler instead.

@@ -2,14 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 import { Element } from '@/types/editor';
-
-// CRITICAL: Import polyfill FIRST - it auto-executes to setup DOM globals
-// Fabric.js 6.x requires document, window, Image globals to exist
-import '@/lib/fabric/server-polyfill';
-
-// Now safe to import fabric (polyfills are already in place)
-import * as fabric from 'fabric';
-import { renderTemplate, RenderConfig, FieldMapping } from '@/lib/fabric/engine';
+import { setupFabricServerPolyfills } from '@/lib/fabric/server-polyfill';
 
 // Vercel Serverless Config - 60 seconds for batch processing
 export const maxDuration = 60;
@@ -21,7 +14,7 @@ interface RenderBatchRequest {
     elements: Element[];
     canvasSize: { width: number; height: number };
     backgroundColor: string;
-    fieldMapping?: FieldMapping;
+    fieldMapping?: Record<string, string>;
     csvRows: Record<string, string>[];
     startIndex?: number;
 }
@@ -46,47 +39,6 @@ const getS3Client = () => {
         forcePathStyle: true,
     });
 };
-
-// Render a single pin server-side
-async function renderSinglePin(
-    elements: Element[],
-    canvasSize: { width: number; height: number },
-    backgroundColor: string,
-    rowData: Record<string, string>,
-    fieldMapping: FieldMapping
-): Promise<Buffer> {
-    // Create headless canvas
-    const canvas = new fabric.StaticCanvas(undefined, {
-        width: canvasSize.width,
-        height: canvasSize.height,
-    });
-
-    try {
-        // Render using shared engine
-        const config: RenderConfig = {
-            width: canvasSize.width,
-            height: canvasSize.height,
-            backgroundColor,
-            interactive: false,
-        };
-
-        await renderTemplate(canvas, elements, config, rowData, fieldMapping);
-
-        // Export to JPEG for smaller size
-        const dataUrl = canvas.toDataURL({
-            format: 'jpeg',
-            quality: 0.9,
-            multiplier: 1,
-        });
-
-        // Convert data URL to Buffer
-        const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-        return Buffer.from(base64Data, 'base64');
-    } finally {
-        // Always cleanup
-        canvas.dispose();
-    }
-}
 
 // Upload to S3
 async function uploadToS3(
@@ -116,6 +68,18 @@ export async function POST(req: NextRequest) {
     const startTime = Date.now();
 
     try {
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // STEP 1: Setup polyfills BEFORE importing fabric
+        // This must happen inside the handler, not at module level
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        setupFabricServerPolyfills();
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // STEP 2: Dynamic import of fabric and engine AFTER polyfills
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const fabric = await import('fabric');
+        const { renderTemplate } = await import('@/lib/fabric/engine');
+
         const body: RenderBatchRequest = await req.json();
         const {
             campaignId,
@@ -140,6 +104,44 @@ export async function POST(req: NextRequest) {
         const s3Client = getS3Client();
         const results: BatchResult[] = [];
 
+        // Render a single pin server-side
+        async function renderSinglePin(
+            rowData: Record<string, string>,
+            pinIndex: number
+        ): Promise<Buffer> {
+            // Create headless canvas using polyfilled globals
+            const canvas = new fabric.StaticCanvas(undefined, {
+                width: canvasSize.width,
+                height: canvasSize.height,
+            });
+
+            try {
+                // Render using shared engine
+                const config = {
+                    width: canvasSize.width,
+                    height: canvasSize.height,
+                    backgroundColor,
+                    interactive: false,
+                };
+
+                await renderTemplate(canvas, elements, config, rowData, fieldMapping);
+
+                // Export to JPEG for smaller size
+                const dataUrl = canvas.toDataURL({
+                    format: 'jpeg',
+                    quality: 0.9,
+                    multiplier: 1,
+                });
+
+                // Convert data URL to Buffer
+                const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+                return Buffer.from(base64Data, 'base64');
+            } finally {
+                // Always cleanup
+                canvas.dispose();
+            }
+        }
+
         // Process pins in parallel (but limit concurrency to avoid memory issues)
         const PARALLEL_LIMIT = 5;
         
@@ -150,13 +152,7 @@ export async function POST(req: NextRequest) {
                 
                 try {
                     // Render pin
-                    const buffer = await renderSinglePin(
-                        elements,
-                        canvasSize,
-                        backgroundColor,
-                        rowData,
-                        fieldMapping
-                    );
+                    const buffer = await renderSinglePin(rowData, pinIndex);
 
                     // Upload to S3
                     const url = await uploadToS3(s3Client, buffer, campaignId, pinIndex);
