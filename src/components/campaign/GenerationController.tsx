@@ -390,31 +390,36 @@ export function GenerationController({
         // FIX #4: Preload ALL unique images before rendering
         // This eliminates repeated CDN fetches during batch processing
         // IMPORTANT: Run on EVERY start, not just startIndex === 0 (handles resume)
+        // NOTE: Skip preloading in SERVER mode - server fetches images directly without CORS
         // ============================================
-        const imageCache = getImageCache();
-        
-        // Only preload if cache is empty (first run or after clear)
-        if (imageCache.getStats().cached === 0) {
-            console.log('[ImageCache] Starting image preload...');
-            const preloadStartTime = Date.now();
+        if (renderMode === 'client') {
+            const imageCache = getImageCache();
             
-            // Extract all unique image URLs from template and CSV data
-            const imageUrls = extractImageUrls(
-                templateElements,
-                csvData,
-                fieldMapping
-            );
-            
-            if (imageUrls.length > 0) {
-                console.log(`[ImageCache] Found ${imageUrls.length} unique images to preload`);
-                await imageCache.preloadAll(imageUrls);
-                const stats = imageCache.getStats();
-                console.log(`[ImageCache] Preload completed in ${Date.now() - preloadStartTime}ms`, stats);
+            // Only preload if cache is empty (first run or after clear)
+            if (imageCache.getStats().cached === 0) {
+                console.log('[ImageCache] Starting image preload...');
+                const preloadStartTime = Date.now();
+                
+                // Extract all unique image URLs from template and CSV data
+                const imageUrls = extractImageUrls(
+                    templateElements,
+                    csvData,
+                    fieldMapping
+                );
+                
+                if (imageUrls.length > 0) {
+                    console.log(`[ImageCache] Found ${imageUrls.length} unique images to preload`);
+                    await imageCache.preloadAll(imageUrls);
+                    const stats = imageCache.getStats();
+                    console.log(`[ImageCache] Preload completed in ${Date.now() - preloadStartTime}ms`, stats);
+                } else {
+                    console.warn('[ImageCache] No image URLs found to preload!');
+                }
             } else {
-                console.warn('[ImageCache] No image URLs found to preload!');
+                console.log('[ImageCache] Using existing cache with', imageCache.getStats().cached, 'images');
             }
         } else {
-            console.log('[ImageCache] Using existing cache with', imageCache.getStats().cached, 'images');
+            console.log('[Server Mode] Skipping client-side image preload - server handles images directly');
         }
 
         const errors: Array<{ rowIndex: number; error: string }> = [];
