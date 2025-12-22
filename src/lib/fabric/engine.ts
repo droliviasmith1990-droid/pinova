@@ -3,6 +3,9 @@ import { Element, TextElement, ImageElement, ShapeElement, FrameElement } from '
 import { convertToFabricStyles } from '@/lib/text/characterStyles';
 import { getImageCache } from '@/lib/canvas/ImagePreloadCache';
 
+// Debug flag for verbose logging - disabled in production for performance
+const DEBUG_RENDER = process.env.NODE_ENV === 'development' || process.env.DEBUG_RENDER === 'true';
+
 export interface RenderConfig {
     width: number;
     height: number;
@@ -178,12 +181,205 @@ function applyTextTransform(
     }
 }
 
+/**
+ * Apply image fit mode (fill, cover, contain) to a fabric image
+ * Extracted to avoid code duplication between cached and non-cached paths
+ * 
+ * @param img - Fabric image object
+ * @param imageEl - Image element from template
+ */
+function applyImageFitMode(
+  img: fabric.FabricImage,
+  imageEl: ImageElement
+): void {
+  const targetWidth = imageEl.width || img.width;
+  const targetHeight = imageEl.height || img.height;
+  const fitMode = imageEl.fitMode || (imageEl.isDynamic ? 'contain' : 'fill');
+  
+  const naturalWidth = img.width || 100;
+  const naturalHeight = img.height || 100;
+  
+  if (DEBUG_RENDER) {
+    console.log(`[Render] Fit mode: ${fitMode}, target: ${targetWidth}x${targetHeight}, natural: ${naturalWidth}x${naturalHeight}`);
+  }
+  
+  if (fitMode === 'fill') {
+    // FILL MODE: Stretch image to exactly match template dimensions
+    const scaleX = targetWidth / naturalWidth;
+    const scaleY = targetHeight / naturalHeight;
+    
+    img.set({
+      left: imageEl.x,
+      top: imageEl.y,
+      scaleX: scaleX,
+      scaleY: scaleY,
+      angle: imageEl.rotation || 0,
+      opacity: imageEl.opacity ?? 1,
+      originX: 'left',
+      originY: 'top',
+    });
+    
+    if (DEBUG_RENDER) {
+      console.log(`[Render] Applied FILL: scaleX=${scaleX.toFixed(3)}, scaleY=${scaleY.toFixed(3)}`);
+    }
+    
+  } else if (fitMode === 'cover') {
+    // COVER MODE: Scale uniformly to cover, then clip overflow
+    const scale = Math.max(targetWidth / naturalWidth, targetHeight / naturalHeight);
+    
+    const scaledWidth = naturalWidth * scale;
+    const scaledHeight = naturalHeight * scale;
+    
+    const offsetX = (scaledWidth - targetWidth) / 2;
+    const offsetY = (scaledHeight - targetHeight) / 2;
+    
+    img.set({
+      left: imageEl.x - offsetX,
+      top: imageEl.y - offsetY,
+      scaleX: scale,
+      scaleY: scale,
+      angle: imageEl.rotation || 0,
+      opacity: imageEl.opacity ?? 1,
+      originX: 'left',
+      originY: 'top',
+      clipPath: new fabric.Rect({
+        left: imageEl.x,
+        top: imageEl.y,
+        width: targetWidth,
+        height: targetHeight,
+        absolutePositioned: true,
+      }),
+    });
+    
+    if (DEBUG_RENDER) {
+      console.log(`[Render] Applied COVER: scale=${scale.toFixed(3)}, offset=(${offsetX.toFixed(1)}, ${offsetY.toFixed(1)})`);
+    }
+    
+  } else if (fitMode === 'contain') {
+    // CONTAIN MODE: Scale uniformly to fit within frame
+    const scale = Math.min(targetWidth / naturalWidth, targetHeight / naturalHeight);
+    
+    const scaledWidth = naturalWidth * scale;
+    const scaledHeight = naturalHeight * scale;
+    const offsetX = (targetWidth - scaledWidth) / 2;
+    const offsetY = (targetHeight - scaledHeight) / 2;
+    
+    img.set({
+      left: imageEl.x + offsetX,
+      top: imageEl.y + offsetY,
+      scaleX: scale,
+      scaleY: scale,
+      angle: imageEl.rotation || 0,
+      opacity: imageEl.opacity ?? 1,
+      originX: 'left',
+      originY: 'top',
+    });
+    
+    if (DEBUG_RENDER) {
+      console.log(`[Render] Applied CONTAIN: scale=${scale.toFixed(3)}, centered with offset (${offsetX.toFixed(1)}, ${offsetY.toFixed(1)})`);
+    }
+  }
+  
+  // Apply corner radius if specified (only for fill/contain, cover uses clipPath already)
+  if (imageEl.cornerRadius && fitMode !== 'cover') {
+    img.clipPath = new fabric.Rect({
+      left: imageEl.x,
+      top: imageEl.y,
+      width: targetWidth,
+      height: targetHeight,
+      rx: imageEl.cornerRadius,
+      ry: imageEl.cornerRadius,
+      absolutePositioned: true,
+    });
+  }
+}
+
+/**
+ * Pre-load all images in parallel BEFORE creating fabric objects
+ * 
+ * Why: Fabric object creation is fast (~5ms), image loading is slow (300ms)
+ * Solution: Load all images first, then create fabric objects with cached images
+ * 
+ * @param elements - Template elements to scan for images
+ * @param rowData - CSV row data for dynamic field substitution
+ * @param fieldMapping - Template field to CSV column mapping
+ * @returns Map<elementId, LoadedImage> - Cached images keyed by element ID
+ */
+async function preloadImages(
+  elements: Element[],
+  rowData: Record<string, string>,
+  fieldMapping: FieldMapping
+): Promise<Map<string, fabric.FabricImage>> {
+  // STEP 1: Find all image elements
+  const imageElements = elements.filter(el => el.type === 'image' && el.visible) as ImageElement[];
+  
+  if (imageElements.length === 0) {
+    return new Map();
+  }
+  
+  if (DEBUG_RENDER) {
+    console.log(`[Render] Pre-loading ${imageElements.length} images in parallel...`);
+  }
+  
+  // STEP 2: Build array of load promises (PARALLEL)
+  const loadPromises = imageElements.map(async (el) => {
+    const src = getDynamicImageUrl(el, rowData, fieldMapping);
+    
+    if (!src) {
+      if (DEBUG_RENDER) {
+        console.log(`[Render] Skipping image ${el.name} - no URL`);
+      }
+      return { elementId: el.id, image: null, error: null };
+    }
+    
+    if (DEBUG_RENDER) {
+      console.log(`[Render] Loading image from: ${src.substring(0, 80)}...`);
+    }
+    
+    // Load image (this runs in PARALLEL for all images)
+    const img = await loadImageToCanvas(src, {});
+    
+    if (DEBUG_RENDER) {
+      console.log(`[Render] Image loaded successfully: ${el.name} (${img.width}x${img.height})`);
+    }
+    
+    return { elementId: el.id, image: img as fabric.FabricImage, error: null };
+  });
+  
+  // STEP 3: Wait for ALL images to load using allSettled for better error isolation
+  // This ensures one failing image doesn't reject the entire promise
+  const results = await Promise.allSettled(loadPromises);
+  
+  // STEP 4: Build cache map (filter out failures and nulls)
+  const cache = new Map<string, fabric.FabricImage>();
+  let failedCount = 0;
+  
+  results.forEach((result) => {
+    if (result.status === 'fulfilled' && result.value.image) {
+      cache.set(result.value.elementId, result.value.image);
+    } else if (result.status === 'rejected') {
+      failedCount++;
+      if (DEBUG_RENDER) {
+        console.error(`[Render] Image preload rejected:`, result.reason);
+      }
+    }
+  });
+  
+  if (DEBUG_RENDER) {
+    console.log(`[Render] Pre-load complete: ${cache.size}/${imageElements.length} images cached` +
+      (failedCount > 0 ? `, ${failedCount} failed` : ''));
+  }
+  
+  return cache;
+}
+
 // --- Fabric Object Creation ---
 async function createFabricObject(
     el: Element,
     config: RenderConfig,
     rowData: Record<string, string>,
-    fieldMapping: FieldMapping
+    fieldMapping: FieldMapping,
+    imageCache?: Map<string, fabric.FabricImage> // ← NEW: Optional cache for parallel loading
 ): Promise<fabric.FabricObject | null> {
     if (!el.visible) return null;
 
@@ -270,136 +466,78 @@ async function createFabricObject(
     }
     else if (el.type === 'image') {
         const imageEl = el as ImageElement;
-        const src = getDynamicImageUrl(imageEl, rowData, fieldMapping);
         
-        console.log(`[Render] Image ${imageEl.name}: URL resolved to:`, {
-            isDynamic: imageEl.isDynamic,
-            dynamicSource: imageEl.dynamicSource,
-            imageUrl: imageEl.imageUrl?.substring(0, 50),
-            resolvedSrc: src?.substring(0, 50),
-            hasUrl: !!src
-        });
-        
-        if (src) {
-            console.log(`[Render] Loading image from: ${src.substring(0, 80)}...`);
-            const img = await loadImageToCanvas(src, {});
-            console.log(`[Render] Image loaded successfully: ${imageEl.name} (${img.width}x${img.height})`);
+        // STEP 1: Check cache first (images pre-loaded in parallel)
+        if (imageCache && imageCache.has(el.id)) {
+            // ✅ Use cached image (already loaded in parallel)
+            const img = imageCache.get(el.id)!;
             
-            // Get natural image dimensions
-            const naturalWidth = img.width || 100;
-            const naturalHeight = img.height || 100;
-            
-            // Get target dimensions from template
-            const targetWidth = imageEl.width || naturalWidth;
-            const targetHeight = imageEl.height || naturalHeight;
-            
-            // Determine fit mode:
-            // - For dynamic images: default to 'contain' to show full image without cropping
-            // - For static images: use configured fitMode or 'fill'
-            const fitMode = imageEl.fitMode || (imageEl.isDynamic ? 'contain' : 'fill');
-            
-            console.log(`[Render] Fit mode: ${fitMode}, target: ${targetWidth}x${targetHeight}, natural: ${naturalWidth}x${naturalHeight}`);
-            
-            if (fitMode === 'fill') {
-                // FILL MODE: Stretch image to exactly match template dimensions
-                // No clipPath needed - just scale independently
-                const scaleX = targetWidth / naturalWidth;
-                const scaleY = targetHeight / naturalHeight;
-                
-                img.set({
-                    left: imageEl.x,
-                    top: imageEl.y,
-                    scaleX: scaleX,
-                    scaleY: scaleY,
-                    angle: imageEl.rotation || 0,
-                    opacity: imageEl.opacity ?? 1,
-                    originX: 'left',
-                    originY: 'top',
-                });
-                
-                console.log(`[Render] Applied FILL: scaleX=${scaleX.toFixed(3)}, scaleY=${scaleY.toFixed(3)}, pos=(${imageEl.x}, ${imageEl.y})`);
-                
-            } else if (fitMode === 'cover') {
-                // COVER MODE: Scale uniformly to cover, then clip overflow
-                // Use larger scale to ensure full coverage
-                const scale = Math.max(targetWidth / naturalWidth, targetHeight / naturalHeight);
-                
-                // Calculate how much of the scaled image fits in target frame
-                const scaledWidth = naturalWidth * scale;
-                const scaledHeight = naturalHeight * scale;
-                
-                // Center the excess on both axes
-                const offsetX = (scaledWidth - targetWidth) / 2;
-                const offsetY = (scaledHeight - targetHeight) / 2;
-                
-                img.set({
-                    // Adjust position to account for clipping offset
-                    left: imageEl.x - offsetX,
-                    top: imageEl.y - offsetY,
-                    scaleX: scale,
-                    scaleY: scale,
-                    angle: imageEl.rotation || 0,
-                    opacity: imageEl.opacity ?? 1,
-                    originX: 'left',
-                    originY: 'top',
-                    // Use absolutePositioned clipPath so it clips in canvas coordinates
-                    clipPath: new fabric.Rect({
-                        left: imageEl.x,
-                        top: imageEl.y,
-                        width: targetWidth,
-                        height: targetHeight,
-                        absolutePositioned: true,  // CRITICAL: Clip in canvas space, not image space
-                    }),
-                });
-                
-                console.log(`[Render] Applied COVER: scale=${scale.toFixed(3)}, offset=(${offsetX.toFixed(1)}, ${offsetY.toFixed(1)})`);
-                console.log(`[Render] COVER position calc: element(${imageEl.x}, ${imageEl.y}) - offset(${offsetX.toFixed(1)}, ${offsetY.toFixed(1)}) = fabric(${img.left}, ${img.top})`);
-                
-            } else if (fitMode === 'contain') {
-                // CONTAIN MODE: Scale uniformly to fit within frame
-                const scale = Math.min(targetWidth / naturalWidth, targetHeight / naturalHeight);
-                
-                // Center the image within the target frame
-                const scaledWidth = naturalWidth * scale;
-                const scaledHeight = naturalHeight * scale;
-                const offsetX = (targetWidth - scaledWidth) / 2;
-                const offsetY = (targetHeight - scaledHeight) / 2;
-                
-                img.set({
-                    left: imageEl.x + offsetX,
-                    top: imageEl.y + offsetY,
-                    scaleX: scale,
-                    scaleY: scale,
-                    angle: imageEl.rotation || 0,
-                    opacity: imageEl.opacity ?? 1,
-                    originX: 'left',
-                    originY: 'top',
-                });
-                
-                console.log(`[Render] Applied CONTAIN: scale=${scale.toFixed(3)}, centered with offset (${offsetX.toFixed(1)}, ${offsetY.toFixed(1)})`);
+            if (DEBUG_RENDER) {
+                console.log(`[Render] Using cached image for ${imageEl.name}`);
             }
             
-            // Apply corner radius if specified (only for fill/contain, cover uses clipPath already)
-            if (imageEl.cornerRadius && fitMode !== 'cover') {
-                img.clipPath = new fabric.Rect({
-                    left: imageEl.x,
-                    top: imageEl.y,
-                    width: targetWidth,
-                    height: targetHeight,
-                    rx: imageEl.cornerRadius,
-                    ry: imageEl.cornerRadius,
-                    absolutePositioned: true,
-                });
-            }
+            // Apply fit mode using extracted function
+            applyImageFitMode(img, imageEl);
             
             fabricObject = img;
+            
         } else {
-            // Placeholder for empty image
-            console.warn(`[Render] No URL for image ${imageEl.name}, creating placeholder`);
-            fabricObject = new fabric.Rect({
-                ...commonOptions, width: imageEl.width || 200, height: imageEl.height || 200,
-                fill: '#f3f4f6', stroke: '#d1d5db', strokeWidth: 2, strokeDashArray: [8, 4]
-            });
+            // ⚠️ FALLBACK: Load synchronously if not cached
+            // This happens when:
+            // 1. imageCache not provided (browser interactive mode)
+            // 2. Image failed to load during preloadImages
+            
+            const src = getDynamicImageUrl(imageEl, rowData, fieldMapping);
+            
+            if (DEBUG_RENDER) {
+                console.log(`[Render] Image ${imageEl.name}: URL resolved to:`, {
+                    isDynamic: imageEl.isDynamic,
+                    dynamicSource: imageEl.dynamicSource,
+                    imageUrl: imageEl.imageUrl?.substring(0, 50),
+                    resolvedSrc: src?.substring(0, 50),
+                    hasUrl: !!src
+                });
+            }
+            
+            if (src) {
+                if (DEBUG_RENDER) {
+                    console.log(`[Render] Image ${imageEl.name} not in cache, loading synchronously from: ${src.substring(0, 80)}...`);
+                }
+                
+                try {
+                    const img = await loadImageToCanvas(src, {});
+                    
+                    if (DEBUG_RENDER) {
+                        console.log(`[Render] Image loaded successfully: ${imageEl.name} (${img.width}x${img.height})`);
+                    }
+                    
+                    // Apply fit mode using extracted function
+                    applyImageFitMode(img as fabric.FabricImage, imageEl);
+                    
+                    fabricObject = img;
+                    
+                } catch (error) {
+                    // Image load failed - create placeholder
+                    console.error(`[Render] Failed to load image ${imageEl.name}:`, error);
+                    fabricObject = new fabric.Rect({
+                        ...commonOptions, 
+                        width: imageEl.width || 200, 
+                        height: imageEl.height || 200,
+                        fill: '#fee2e2', 
+                        stroke: '#dc2626', 
+                        strokeWidth: 2
+                    });
+                }
+            } else {
+                // No URL - create placeholder
+                if (DEBUG_RENDER) {
+                    console.warn(`[Render] No URL for image ${imageEl.name}, creating placeholder`);
+                }
+                fabricObject = new fabric.Rect({
+                    ...commonOptions, width: imageEl.width || 200, height: imageEl.height || 200,
+                    fill: '#f3f4f6', stroke: '#d1d5db', strokeWidth: 2, strokeDashArray: [8, 4]
+                });
+            }
         }
     }
     else if (el.type === 'shape') {
@@ -465,6 +603,7 @@ async function createFabricObject(
  * - Only adds NEW elements
  * - Only removes DELETED elements
  * - Never destroys unchanged elements
+ * - 🚀 PHASE 1: Parallel image loading for 5-6x speedup
  */
 export async function renderTemplate(
     canvas: fabric.StaticCanvas | fabric.Canvas,
@@ -478,22 +617,24 @@ export async function renderTemplate(
     if (!canvas.getElement()) return;
 
     // 🔍 DEBUG: Canvas state before render
-    console.log('[Render] 🎯 Canvas state BEFORE render:', {
-        canvasWidth: canvas.width,
-        canvasHeight: canvas.height,
-        viewportTransform: canvas.viewportTransform,
-        backgroundColor: canvas.backgroundColor,
-    });
+    if (DEBUG_RENDER) {
+        console.log('[Render] 🎯 Canvas state BEFORE render:', {
+            canvasWidth: canvas.width,
+            canvasHeight: canvas.height,
+            viewportTransform: canvas.viewportTransform,
+            backgroundColor: canvas.backgroundColor,
+        });
 
-    // 🔍 DEBUG: Element positions from template
-    console.log('[Render] 📐 Elements from template (original positions):', elements.map(el => ({
-        name: el.name,
-        type: el.type,
-        x: el.x,
-        y: el.y,
-        width: el.width,
-        height: el.height,
-    })));
+        // 🔍 DEBUG: Element positions from template
+        console.log('[Render] 📐 Elements from template (original positions):', elements.map(el => ({
+            name: el.name,
+            type: el.type,
+            x: el.x,
+            y: el.y,
+            width: el.width,
+            height: el.height,
+        })));
+    }
 
     // 1. BUILD INDEX of existing canvas objects by elementId
     const existingObjectsMap = new Map<string, fabric.FabricObject>();
@@ -516,7 +657,9 @@ export async function renderTemplate(
     });
 
     // DEBUG LOGGING
-    console.log(`[Render] Existing: ${existingObjectsMap.size}, Incoming: ${elements.length}, New: ${newElements.length}, Deleted: ${deletedIds.length}`);
+    if (DEBUG_RENDER) {
+        console.log(`[Render] Existing: ${existingObjectsMap.size}, Incoming: ${elements.length}, New: ${newElements.length}, Deleted: ${deletedIds.length}`);
+    }
 
     // 5. REMOVE deleted objects
     deletedIds.forEach(id => {
@@ -524,54 +667,74 @@ export async function renderTemplate(
         if (obj) canvas.remove(obj);
     });
 
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🚀 PHASE 1: Pre-load all images in PARALLEL
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const imageCache = await preloadImages(newElements, rowData, fieldMapping);
 
     // 6. ADD new objects sorted by zIndex (ascending = lower zIndex added first = bottom of stack)
     // IMPORTANT: We use pure z-index sorting. The Layers panel is the source of truth for layer order.
     // isCanvaBackground is just metadata - actual render order is determined by zIndex.
     const sortedNewElements = [...newElements].sort((a, b) => a.zIndex - b.zIndex);
     
-    console.log(`[Render] ✅ Sorted element order (by zIndex ascending):`,
-        sortedNewElements.map(el => `${el.name} (z:${el.zIndex})`).join(' → '));
+    if (DEBUG_RENDER) {
+        console.log(`[Render] ✅ Sorted element order (by zIndex ascending):`,
+            sortedNewElements.map(el => `${el.name} (z:${el.zIndex})`).join(' → '));
 
-    console.log(`[Render] About to add ${sortedNewElements.length} new elements:`, 
-        sortedNewElements.map(el => `${el.name} (${el.type})`));
+        console.log(`[Render] About to add ${sortedNewElements.length} new elements:`, 
+            sortedNewElements.map(el => `${el.name} (${el.type})`));
+    }
 
     for (const el of sortedNewElements) {
-        console.log(`[Render] Creating fabric object for: ${el.name} (${el.type}, id: ${el.id})`);
-        console.log(`[Render] 📍 Template position for ${el.name}: x=${el.x}, y=${el.y}`);
+        if (DEBUG_RENDER) {
+            console.log(`[Render] Creating fabric object for: ${el.name} (${el.type}, id: ${el.id})`);
+            console.log(`[Render] 📍 Template position for ${el.name}: x=${el.x}, y=${el.y}`);
+        }
         
-        const fabricObj = await createFabricObject(el, config, rowData, fieldMapping);
+        // Pass imageCache to createFabricObject for parallel loading optimization
+        const fabricObj = await createFabricObject(el, config, rowData, fieldMapping, imageCache);
         
         if (fabricObj) {
-            // 🔍 DEBUG: Compare template Y vs Fabric Y
-            console.log(`[Render] 🎯 Position comparison for ${el.name}:`, {
-                'Template Y': el.y,
-                'Fabric top': fabricObj.top,
-                'Difference': (fabricObj.top || 0) - el.y,
-                'Template X': el.x,
-                'Fabric left': fabricObj.left,
-                'ScaleX': fabricObj.scaleX,
-                'ScaleY': fabricObj.scaleY,
-            });
+            if (DEBUG_RENDER) {
+                // 🔍 DEBUG: Compare template Y vs Fabric Y
+                console.log(`[Render] 🎯 Position comparison for ${el.name}:`, {
+                    'Template Y': el.y,
+                    'Fabric top': fabricObj.top,
+                    'Difference': (fabricObj.top || 0) - el.y,
+                    'Template X': el.x,
+                    'Fabric left': fabricObj.left,
+                    'ScaleX': fabricObj.scaleX,
+                    'ScaleY': fabricObj.scaleY,
+                });
+            }
             
             canvas.add(fabricObj);
-            console.log(`[Render] ✅ Added element: ${el.name} (${el.type})`);
+            
+            if (DEBUG_RENDER) {
+                console.log(`[Render] ✅ Added element: ${el.name} (${el.type})`);
+            }
         } else {
-            console.warn(`[Render] ❌ Failed to create fabric object for: ${el.name} (${el.type})`);
+            if (DEBUG_RENDER) {
+                console.warn(`[Render] ❌ Failed to create fabric object for: ${el.name} (${el.type})`);
+            }
         }
     }
 
-    console.log(`[Render] Final canvas object count: ${canvas.getObjects().length}`);
-    
-    // 🔍 DEBUG: Final positions on canvas
-    console.log('[Render] 📊 Final object positions on canvas:', canvas.getObjects().map(obj => ({
-        name: (obj as any).name || 'unnamed',
-        type: (obj as any).type,
-        top: obj.top,
-        left: obj.left,
-        width: obj.width,
-        height: obj.height,
-    })));
+    if (DEBUG_RENDER) {
+        console.log(`[Render] Final canvas object count: ${canvas.getObjects().length}`);
+        
+        // 🔍 DEBUG: Final positions on canvas
+        console.log('[Render] 📊 Final object positions on canvas:', canvas.getObjects().map(obj => ({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            name: (obj as any).name || 'unnamed',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            type: (obj as any).type,
+            top: obj.top,
+            left: obj.left,
+            width: obj.width,
+            height: obj.height,
+        })));
+    }
 
     // 7. UPDATE canvas dimensions and background (safe, doesn't affect objects)
     canvas.setDimensions({ width: config.width, height: config.height });

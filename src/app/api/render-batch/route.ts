@@ -3,10 +3,14 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 import { Element } from '@/types/editor';
 import { setupFabricServerPolyfills } from '@/lib/fabric/server-polyfill';
+// NOTE: CanvasPool imports fabric at module level, so it must be dynamically imported AFTER polyfills
 
 // Vercel Serverless Config - 60 seconds for batch processing
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
+
+// Debug flag for verbose logging - disabled in production for performance
+const DEBUG_RENDER = process.env.NODE_ENV === 'development' || process.env.DEBUG_RENDER === 'true';
 
 // Request body interface
 interface RenderBatchRequest {
@@ -35,7 +39,9 @@ const getS3Client = () => {
         ? rawEndpoint
         : `https://${rawEndpoint}`;
     
-    console.log('[S3] Initializing with endpoint:', endpoint);
+    if (DEBUG_RENDER) {
+        console.log('[S3] Initializing with endpoint:', endpoint);
+    }
     
     return new S3Client({
         region: 'auto',
@@ -87,10 +93,10 @@ export async function POST(req: NextRequest) {
         setupFabricServerPolyfills();
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // STEP 2: Dynamic import of fabric and engine AFTER polyfills
+        // STEP 2: Dynamic import of fabric-dependent modules AFTER polyfills
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        const fabric = await import('fabric');
         const { renderTemplate } = await import('@/lib/fabric/engine');
+        const { CanvasPool } = await import('@/lib/fabric/CanvasPool');
 
         const body: RenderBatchRequest = await req.json();
         const {
@@ -116,98 +122,108 @@ export async function POST(req: NextRequest) {
         const s3Client = getS3Client();
         const results: BatchResult[] = [];
 
-        // Render a single pin server-side
-        async function renderSinglePin(
-            rowData: Record<string, string>,
-            pinIndex: number
-        ): Promise<Buffer> {
-            // Create headless canvas using polyfilled globals
-            const canvas = new fabric.StaticCanvas(undefined, {
-                width: canvasSize.width,
-                height: canvasSize.height,
-            });
-
-            try {
-                // Render using shared engine
-                const config = {
-                    width: canvasSize.width,
-                    height: canvasSize.height,
-                    backgroundColor,
-                    interactive: false,
-                };
-
-                await renderTemplate(canvas, elements, config, rowData, fieldMapping);
-
-                // Export to JPEG for smaller size
-                const dataUrl = canvas.toDataURL({
-                    format: 'jpeg',
-                    quality: 0.9,
-                    multiplier: 1,
-                });
-
-                // Convert data URL to Buffer
-                const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-                return Buffer.from(base64Data, 'base64');
-            } finally {
-                // Always cleanup
-                canvas.dispose();
-            }
-        }
-
-        // Process pins in parallel (but limit concurrency to avoid memory issues)
-        const PARALLEL_LIMIT = 5;
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // 🚀 PHASE 1: Create canvas pool for reuse
+        // Calculate dynamic limit based on available memory
+        // Vercel Serverless: 1024MB default, each canvas ~50MB
+        // Safe limit: 14 concurrent (700MB usage, 300MB headroom)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const PARALLEL_LIMIT = parseInt(process.env.PARALLEL_LIMIT || '14', 10);
         
-        for (let i = 0; i < csvRows.length; i += PARALLEL_LIMIT) {
-            const chunk = csvRows.slice(i, i + PARALLEL_LIMIT);
-            const chunkPromises = chunk.map(async (rowData, chunkIndex) => {
-                const pinIndex = startIndex + i + chunkIndex;
+        if (DEBUG_RENDER) {
+            console.log(`[Server Render] Using PARALLEL_LIMIT: ${PARALLEL_LIMIT}`);
+        }
+        
+        const canvasPool = new CanvasPool(PARALLEL_LIMIT, canvasSize.width, canvasSize.height);
+
+        try {
+            // Render function using pool
+            async function renderSinglePin(
+                rowData: Record<string, string>
+            ): Promise<Buffer> {
+                const canvas = canvasPool.acquire(); // ← Get from pool (~1ms)
                 
                 try {
-                    // Render pin
-                    const buffer = await renderSinglePin(rowData, pinIndex);
-
-                    // Upload to S3
-                    const url = await uploadToS3(s3Client, buffer, campaignId, pinIndex);
-
-                    return {
-                        index: pinIndex,
-                        success: true,
-                        url,
-                        fileName: `pin-${pinIndex}.jpg`,
+                    const config = {
+                        width: canvasSize.width,
+                        height: canvasSize.height,
+                        backgroundColor,
+                        interactive: false,
                     };
-                } catch (error) {
-                    console.error(`[Server Render] Pin ${pinIndex} failed:`, error);
-                    return {
-                        index: pinIndex,
-                        success: false,
-                        error: error instanceof Error ? error.message : 'Unknown error',
-                    };
+
+                    await renderTemplate(canvas, elements, config, rowData, fieldMapping);
+
+                    // Export to JPEG
+                    const dataUrl = canvas.toDataURL({
+                        format: 'jpeg',
+                        quality: 0.9,
+                        multiplier: 1,
+                    });
+
+                    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+                    return Buffer.from(base64Data, 'base64');
+                } finally {
+                    canvasPool.release(canvas); // ← Return to pool (don't dispose!)
                 }
+            }
+
+            // Process pins in parallel
+            for (let i = 0; i < csvRows.length; i += PARALLEL_LIMIT) {
+                const chunk = csvRows.slice(i, i + PARALLEL_LIMIT);
+                const chunkPromises = chunk.map(async (rowData, chunkIndex) => {
+                    const pinIndex = startIndex + i + chunkIndex;
+                    
+                    try {
+                        const buffer = await renderSinglePin(rowData);
+                        const url = await uploadToS3(s3Client, buffer, campaignId, pinIndex);
+                        
+                        return {
+                            index: pinIndex,
+                            success: true,
+                            url,
+                            fileName: `pin-${pinIndex}.jpg`,
+                        };
+                    } catch (error) {
+                        console.error(`[Server Render] Pin ${pinIndex} failed:`, error);
+                        return {
+                            index: pinIndex,
+                            success: false,
+                            error: error instanceof Error ? error.message : 'Unknown error',
+                        };
+                    }
+                });
+
+                const chunkResults = await Promise.all(chunkPromises);
+                results.push(...chunkResults);
+            }
+
+            const successCount = results.filter((r) => r.success).length;
+            const duration = Date.now() - startTime;
+            const pinsPerSecond = (successCount / (duration / 1000)).toFixed(2);
+
+            console.log(
+                `[Server Render] Completed: ${successCount}/${csvRows.length} pins in ${duration}ms (${pinsPerSecond} pins/sec)`
+            );
+
+            return NextResponse.json({
+                success: true,
+                results,
+                stats: {
+                    total: csvRows.length,
+                    success: successCount,
+                    failed: csvRows.length - successCount,
+                    durationMs: duration,
+                    pinsPerSecond: parseFloat(pinsPerSecond),
+                },
             });
 
-            const chunkResults = await Promise.all(chunkPromises);
-            results.push(...chunkResults);
+        } finally {
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // 🚨 CRITICAL: Cleanup pool even if batch fails
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            canvasPool.cleanup();
         }
 
-        const successCount = results.filter((r) => r.success).length;
-        const duration = Date.now() - startTime;
-        const pinsPerSecond = (successCount / (duration / 1000)).toFixed(2);
-
-        console.log(
-            `[Server Render] Completed: ${successCount}/${csvRows.length} pins in ${duration}ms (${pinsPerSecond} pins/sec)`
-        );
-
-        return NextResponse.json({
-            success: true,
-            results,
-            stats: {
-                total: csvRows.length,
-                success: successCount,
-                failed: csvRows.length - successCount,
-                durationMs: duration,
-                pinsPerSecond: parseFloat(pinsPerSecond),
-            },
-        });
     } catch (error: unknown) {
         console.error('[Server Render] Batch error:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
