@@ -7,17 +7,24 @@ import { getImageCache } from '@/lib/canvas/ImagePreloadCache';
 const DEBUG_RENDER = process.env.NODE_ENV === 'development' || process.env.DEBUG_RENDER === 'true';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 🚀 SERVER-SIDE IMAGE CACHE - Reuses fetched images across renders
-// This is populated by route.ts before batch rendering starts
+// 🚀 SERVER-SIDE CACHES - Reuse fetched images across renders
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Level 1: URL → base64 data URL (set by route.ts before batch)
 let serverImageCache: Map<string, string> | null = null;
+
+// Level 2: URL → FabricImage object (populated on first load, cloned for reuse)
+let fabricImageCache: Map<string, fabric.FabricImage> | null = null;
 
 export function setServerImageCache(cache: Map<string, string>): void {
     serverImageCache = cache;
+    // Initialize fabric image cache when data URL cache is set
+    fabricImageCache = new Map();
 }
 
 export function clearServerImageCache(): void {
     serverImageCache = null;
+    fabricImageCache = null;
 }
 
 export interface RenderConfig {
@@ -72,20 +79,40 @@ async function loadImageToCanvas(url: string, options: Partial<fabric.ImageProps
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 🚀 SERVER CACHE: Check if image was pre-fetched by route.ts
-    // This avoids re-fetching the same image for every pin in a batch
+    // 🚀 LEVEL 2 CACHE: FabricImage object cache (fastest - just clone)
+    // This reuses already-created FabricImage objects
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (!isBrowser && fabricImageCache) {
+        const cachedFabricImage = fabricImageCache.get(url);
+        if (cachedFabricImage) {
+            // Clone the cached FabricImage (fast!) instead of recreating
+            try {
+                const cloned = await cachedFabricImage.clone();
+                return cloned;
+            } catch {
+                console.warn(`[Engine] FabricImage clone failed for: ${url.substring(0, 60)}`);
+            }
+        }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🚀 LEVEL 1 CACHE: Data URL cache (slower - need to create FabricImage)
+    // Used on first access, then stores result in Level 2 cache
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (!isBrowser && serverImageCache) {
         const cachedDataUrl = serverImageCache.get(url);
         if (cachedDataUrl) {
-            // Cache HIT - use pre-fetched image
             try {
-                return await tryLoad(cachedDataUrl);
+                const img = await tryLoad(cachedDataUrl);
+                // Store in Level 2 cache for faster subsequent access
+                if (fabricImageCache && img instanceof fabric.FabricImage) {
+                    fabricImageCache.set(url, img);
+                }
+                return img;
             } catch {
-                console.warn(`[Engine] Cache hit but load failed for: ${url.substring(0, 60)}`);
+                console.warn(`[Engine] Data URL cache load failed for: ${url.substring(0, 60)}`);
             }
         } else {
-            // Cache MISS - log for debugging
             console.warn(`[Engine] Cache MISS for: ${url.substring(0, 80)}`);
         }
     }
