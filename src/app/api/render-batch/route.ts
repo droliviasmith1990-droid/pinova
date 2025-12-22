@@ -201,9 +201,12 @@ export async function POST(req: NextRequest) {
 
             // Render function using pool + image cache
             async function renderSinglePin(
-                rowData: Record<string, string>
+                rowData: Record<string, string>,
+                pinIndex: number
             ): Promise<Buffer> {
+                const t0 = Date.now();
                 const canvas = canvasPool.acquire();
+                const t1 = Date.now();
                 
                 try {
                     const config = {
@@ -215,16 +218,25 @@ export async function POST(req: NextRequest) {
 
                     // Pass image cache to renderTemplate
                     await renderTemplate(canvas, elements, config, rowData, fieldMapping);
+                    const t2 = Date.now();
 
-                    // Export to JPEG
+                    // Export to JPEG - this is synchronous and CPU-intensive
                     const dataUrl = canvas.toDataURL({
                         format: 'jpeg',
-                        quality: 0.9,
+                        quality: 0.85,  // Reduced from 0.9 for faster encoding
                         multiplier: 1,
                     });
+                    const t3 = Date.now();
 
                     const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-                    return Buffer.from(base64Data, 'base64');
+                    const buffer = Buffer.from(base64Data, 'base64');
+                    
+                    // Log first few pins for timing breakdown
+                    if (pinIndex < 3) {
+                        console.log(`[Timing Detail] Pin ${pinIndex}: acquire=${t1-t0}ms, renderTemplate=${t2-t1}ms, toDataURL=${t3-t2}ms`);
+                    }
+                    
+                    return buffer;
                 } finally {
                     canvasPool.release(canvas);
                 }
@@ -244,7 +256,7 @@ export async function POST(req: NextRequest) {
                     try {
                         // ⏱️ TIMING: Measure each step
                         const t0 = Date.now();
-                        const buffer = await renderSinglePin(rowData);
+                        const buffer = await renderSinglePin(rowData, pinIndex);
                         const t1 = Date.now();
                         const url = await uploadToS3(s3Client, buffer, campaignId, pinIndex);
                         const t2 = Date.now();
