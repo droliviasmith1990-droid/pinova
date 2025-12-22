@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // STEP 2: Dynamic import of fabric-dependent modules AFTER polyfills
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        const { renderTemplate } = await import('@/lib/fabric/engine');
+        const { renderTemplate, setServerImageCache, clearServerImageCache } = await import('@/lib/fabric/engine');
         const { CanvasPool } = await import('@/lib/fabric/CanvasPool');
 
         const body: RenderBatchRequest = await req.json();
@@ -137,11 +137,75 @@ export async function POST(req: NextRequest) {
         const canvasPool = new CanvasPool(PARALLEL_LIMIT, canvasSize.width, canvasSize.height);
 
         try {
-            // Render function using pool
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // 🚀 OPTIMIZATION: Pre-load unique images ONCE for entire batch
+            // Images are shared across pins - fetch each URL only once
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            const imageCache = new Map<string, string>(); // URL -> base64 data URL
+            
+            // Extract unique image URLs from elements and CSV data
+            const imageElements = elements.filter(el => el.type === 'image' && el.visible);
+            const uniqueUrls = new Set<string>();
+            
+            for (const el of imageElements) {
+                const imgEl = el as { imageUrl?: string; isDynamic?: boolean; dynamicSource?: string };
+                if (imgEl.isDynamic && imgEl.dynamicSource) {
+                    // Dynamic images - collect from all rows
+                    for (const row of csvRows) {
+                        const mappedField = fieldMapping[imgEl.dynamicSource] || imgEl.dynamicSource;
+                        const url = row[mappedField];
+                        if (url) uniqueUrls.add(url);
+                    }
+                } else if (imgEl.imageUrl) {
+                    uniqueUrls.add(imgEl.imageUrl);
+                }
+            }
+            
+            if (uniqueUrls.size > 0 && DEBUG_RENDER) {
+                console.log(`[Server Render] Pre-loading ${uniqueUrls.size} unique images...`);
+            }
+            
+            // Pre-fetch all unique images in parallel
+            const preFetchStart = Date.now();
+            await Promise.all(Array.from(uniqueUrls).map(async (url) => {
+                try {
+                    let fetchUrl = url;
+                    if (url.startsWith('/api/proxy-image')) {
+                        const urlParams = new URLSearchParams(url.split('?')[1] || '');
+                        const originalUrl = urlParams.get('url');
+                        if (originalUrl) fetchUrl = decodeURIComponent(originalUrl);
+                    }
+                    
+                    const response = await fetch(fetchUrl, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'Accept': 'image/*',
+                        },
+                    });
+                    
+                    if (response.ok) {
+                        const arrayBuffer = await response.arrayBuffer();
+                        const base64 = Buffer.from(arrayBuffer).toString('base64');
+                        const contentType = response.headers.get('content-type') || 'image/png';
+                        imageCache.set(url, `data:${contentType};base64,${base64}`);
+                    }
+                } catch {
+                    if (DEBUG_RENDER) console.warn(`[Server Render] Image prefetch failed: ${url.substring(0, 60)}`);
+                }
+            }));
+            
+            // 🚀 Set the cache so engine.ts loadImageToCanvas can use it
+            setServerImageCache(imageCache);
+            
+            if (DEBUG_RENDER) {
+                console.log(`[Server Render] Pre-loaded ${imageCache.size} images in ${Date.now() - preFetchStart}ms`);
+            }
+
+            // Render function using pool + image cache
             async function renderSinglePin(
                 rowData: Record<string, string>
             ): Promise<Buffer> {
-                const canvas = canvasPool.acquire(); // ← Get from pool (~1ms)
+                const canvas = canvasPool.acquire();
                 
                 try {
                     const config = {
@@ -151,6 +215,7 @@ export async function POST(req: NextRequest) {
                         interactive: false,
                     };
 
+                    // Pass image cache to renderTemplate
                     await renderTemplate(canvas, elements, config, rowData, fieldMapping);
 
                     // Export to JPEG
@@ -163,11 +228,14 @@ export async function POST(req: NextRequest) {
                     const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
                     return Buffer.from(base64Data, 'base64');
                 } finally {
-                    canvasPool.release(canvas); // ← Return to pool (don't dispose!)
+                    canvasPool.release(canvas);
                 }
             }
 
-            // Process pins in parallel
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // 🚀 OPTIMIZATION: Process ALL pins in parallel (up to PARALLEL_LIMIT)
+            // Render + Upload happen concurrently for maximum throughput
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             for (let i = 0; i < csvRows.length; i += PARALLEL_LIMIT) {
                 const chunk = csvRows.slice(i, i + PARALLEL_LIMIT);
                 const chunkPromises = chunk.map(async (rowData, chunkIndex) => {
@@ -219,9 +287,10 @@ export async function POST(req: NextRequest) {
 
         } finally {
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            // 🚨 CRITICAL: Cleanup pool even if batch fails
+            // 🚨 CRITICAL: Cleanup pool and cache even if batch fails
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             canvasPool.cleanup();
+            clearServerImageCache();
         }
 
     } catch (error: unknown) {

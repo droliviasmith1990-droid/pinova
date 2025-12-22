@@ -414,9 +414,12 @@ export function GenerationController({
         log(`Starting BATCH generation in ${renderMode} mode from index ${startIndex}`);
 
         // BATCH_SIZE: Number of pins to render and upload together
-        const BATCH_SIZE = 10;
+        // Increased from 10 to 50 for fewer network round-trips
+        // Server can handle 14 concurrent renders (PARALLEL_LIMIT)
+        // so batches of 50 are processed in ~4 chunks server-side
+        const BATCH_SIZE = 50;
 
-        // Pre-warm canvas pool for batch processing
+        // Pre-warm canvas pool for batch processing (client mode only needs ~10)
         canvasPoolRef.current.prewarm(Math.min(BATCH_SIZE, 10), canvasSize.width, canvasSize.height);
 
         // ============================================
@@ -624,30 +627,40 @@ export function GenerationController({
                 if (shouldPauseRef.current) break;
 
                 // ============================================
-                // Step 2: Handle Server Results (Client results already handled in pipeline)
+                // Step 2: Handle Server Results - BATCH SAVE to DB
+                // Uses PATCH /api/generated-pins for single batch insert
                 // ============================================
                 
-                // Server mode results still need DB saving here if they weren't handled above
-                // Note: The new pipeline logic handles Client Mode.
-                // Server mode logic is separate (lines 518) and returns objects with {success, url} but NOT saved to DB.
+                // Server mode results still need DB saving
+                const serverModeResultsToSave = renderResults.filter(r => r.success && r.url && renderMode === 'server');
                 
-                const severModeResultsToSave = renderResults.filter(r => r.success && r.url && renderMode === 'server');
-                
-                if (severModeResultsToSave.length > 0) {
-                    const dbPromises = severModeResultsToSave.map(async (result) => {
-                        try {
-                            await fetch('/api/generated-pins', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                credentials: 'include',
-                                body: JSON.stringify({
+                if (serverModeResultsToSave.length > 0) {
+                    // 🚀 BATCH SAVE: Single request instead of N requests
+                    try {
+                        const batchResponse = await fetch('/api/generated-pins', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({
+                                pins: serverModeResultsToSave.map(result => ({
                                     campaign_id: campaignId,
                                     user_id: userId,
                                     image_url: result.url,
                                     data_row: result.rowData,
                                     status: 'completed',
-                                }),
-                            });
+                                })),
+                            }),
+                        });
+
+                        if (!batchResponse.ok) {
+                            console.error('[Server Mode] Batch DB save failed:', await batchResponse.text());
+                        } else {
+                            const batchResult = await batchResponse.json();
+                            log(`[Server Mode] Batch saved ${batchResult.count} pins to DB`);
+                        }
+
+                        // Update UI for each successful pin
+                        for (const result of serverModeResultsToSave) {
                             onPinGenerated({
                                 id: `${campaignId}-${result.pinNumber}`,
                                 rowIndex: result.pinNumber,
@@ -655,11 +668,10 @@ export function GenerationController({
                                 status: 'completed',
                                 csvData: result.rowData,
                             });
-                        } catch (dbError) {
-                            console.error(`[Server Mode] DB save failed for pin ${result.pinNumber}:`, dbError);
                         }
-                    });
-                    await Promise.all(dbPromises);
+                    } catch (dbError) {
+                        console.error('[Server Mode] Batch DB save error:', dbError);
+                    }
                 }
 
                 // Client results are already saved in the pipeline above. No further action needed.

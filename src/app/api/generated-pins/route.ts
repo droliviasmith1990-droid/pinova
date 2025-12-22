@@ -206,6 +206,109 @@ export async function POST(request: NextRequest) {
 }
 
 // ============================================
+// PATCH: Batch save multiple generated pins in single DB call
+// Optimizes server-side rendering by eliminating N network round-trips
+// ============================================
+export async function PATCH(request: NextRequest) {
+    log('[generated-pins] PATCH batch save started');
+
+    try {
+        const body = await request.json();
+        
+        // Validate batch structure
+        if (!body.pins || !Array.isArray(body.pins) || body.pins.length === 0) {
+            return NextResponse.json(
+                { error: 'pins array is required and must not be empty' },
+                { status: 400 }
+            );
+        }
+
+        // Get service role client for batch operations
+        const supabase = getServiceSupabase();
+        if (!supabase) {
+            return NextResponse.json(
+                { error: 'Server configuration error' },
+                { status: 503 }
+            );
+        }
+
+        // Prepare batch insert data
+        const pinsToInsert = body.pins.map((pin: {
+            campaign_id: string;
+            user_id: string;
+            image_url: string;
+            data_row: Record<string, string>;
+            status: string;
+            error_message?: string;
+        }) => ({
+            campaign_id: pin.campaign_id,
+            user_id: pin.user_id,
+            image_url: pin.image_url || null,
+            data_row: pin.data_row || null,
+            status: pin.status || 'completed',
+            error_message: pin.error_message || null,
+        }));
+
+        log(`[generated-pins] Batch inserting ${pinsToInsert.length} pins...`);
+
+        // Single batch insert
+        const { data, error } = await supabase
+            .from('generated_pins')
+            .insert(pinsToInsert)
+            .select();
+
+        if (error) {
+            console.error('[generated-pins] Batch insert error:', error);
+            return NextResponse.json(
+                { error: 'Failed to save pins', details: error.message },
+                { status: 500 }
+            );
+        }
+
+        // Update campaign progress with total count
+        const campaignId = pinsToInsert[0]?.campaign_id;
+        if (campaignId) {
+            try {
+                // Get current count and add batch size
+                const { data: campaignData } = await supabase
+                    .from('campaigns')
+                    .select('generated_pins')
+                    .eq('id', campaignId)
+                    .single();
+
+                const currentCount = (campaignData?.generated_pins as number) || 0;
+                const successCount = data?.length || 0;
+                
+                await supabase
+                    .from('campaigns')
+                    .update({
+                        generated_pins: currentCount + successCount,
+                        current_index: currentCount + successCount,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', campaignId);
+            } catch (updateErr) {
+                console.warn('[generated-pins] Campaign batch update warning:', updateErr);
+            }
+        }
+
+        log(`[generated-pins] Batch saved ${data?.length || 0} pins successfully`);
+        return NextResponse.json({ 
+            success: true, 
+            count: data?.length || 0,
+            data 
+        }, { status: 201 });
+
+    } catch (error) {
+        console.error('[generated-pins] PATCH error:', error);
+        return NextResponse.json(
+            { error: 'Internal server error' },
+            { status: 500 }
+        );
+    }
+}
+
+// ============================================
 // GET: Get generated pins for a campaign
 // ============================================
 export async function GET(request: NextRequest) {

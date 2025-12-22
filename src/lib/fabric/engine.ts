@@ -6,6 +6,20 @@ import { getImageCache } from '@/lib/canvas/ImagePreloadCache';
 // Debug flag for verbose logging - disabled in production for performance
 const DEBUG_RENDER = process.env.NODE_ENV === 'development' || process.env.DEBUG_RENDER === 'true';
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🚀 SERVER-SIDE IMAGE CACHE - Reuses fetched images across renders
+// This is populated by route.ts before batch rendering starts
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let serverImageCache: Map<string, string> | null = null;
+
+export function setServerImageCache(cache: Map<string, string>): void {
+    serverImageCache = cache;
+}
+
+export function clearServerImageCache(): void {
+    serverImageCache = null;
+}
+
 export interface RenderConfig {
     width: number;
     height: number;
@@ -53,6 +67,24 @@ async function loadImageToCanvas(url: string, options: Partial<fabric.ImageProps
             } catch (error) {
                 console.warn(`[Engine] Failed to create FabricImage from cache for ${url.substring(0, 60)}:`, error);
                 // Fall through to normal loading
+            }
+        }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🚀 SERVER CACHE: Check if image was pre-fetched by route.ts
+    // This avoids re-fetching the same image for every pin in a batch
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (!isBrowser && serverImageCache) {
+        const cachedDataUrl = serverImageCache.get(url);
+        if (cachedDataUrl) {
+            if (DEBUG_RENDER) {
+                console.log(`[Engine] Using cached image for: ${url.substring(0, 60)}`);
+            }
+            try {
+                return await tryLoad(cachedDataUrl);
+            } catch {
+                // Fall through to normal loading if cache load fails
             }
         }
     }
