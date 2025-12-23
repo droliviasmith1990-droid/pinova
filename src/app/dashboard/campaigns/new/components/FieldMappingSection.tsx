@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
     ChevronDown, 
     AlertCircle, 
@@ -28,6 +29,8 @@ interface DynamicField {
     layerName: string;
     required: boolean;
     isAdditional?: boolean;
+    // NEW: Track which templates contain this field
+    templateSources?: { id: string; name: string }[];
 }
 
 // Extract dynamic fields from template
@@ -114,11 +117,16 @@ interface FieldMappingSectionProps {
 export function FieldMappingSection({ className }: FieldMappingSectionProps) {
     const { 
         csvData, 
-        selectedTemplate, 
+        selectedTemplate,
+        selectedTemplates,
+        selectionMode,
         fieldMapping, 
         setFieldMapping, 
         updateFieldMapping 
     } = useCampaignWizard();
+    
+    // Determine if multi-template mode
+    const isMultiTemplateMode = selectionMode === 'multiple' && selectedTemplates.length > 1;
 
     const [templateFields, setTemplateFields] = useState<DynamicField[]>([]);
     const [additionalFields, setAdditionalFields] = useState<DynamicField[]>([]);
@@ -127,8 +135,10 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
     const [nextTextNumber, setNextTextNumber] = useState(1);
     const [nextImageNumber, setNextImageNumber] = useState(1);
     const [showColumns, setShowColumns] = useState(false);
+    const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
     
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
     // Combine template fields and additional fields - memoized to prevent useEffect re-runs
     const allFields = useMemo(() => 
@@ -147,7 +157,9 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
     // Fetch template and extract dynamic fields
     useEffect(() => {
         const loadTemplateFields = async () => {
-            if (!selectedTemplate) {
+            // Check if we have any template selected
+            const hasTemplate = isMultiTemplateMode ? selectedTemplates.length > 0 : !!selectedTemplate;
+            if (!hasTemplate) {
                 setTemplateFields([]);
                 setIsLoading(false);
                 return;
@@ -155,27 +167,76 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
 
             setIsLoading(true);
             try {
-                const fullTemplate = await getTemplate(selectedTemplate.id) as { 
-                    elements?: Element[]; 
-                    dynamic_fields?: TemplateField[] 
-                };
-                if (fullTemplate && fullTemplate.elements) {
-                    const fields = extractDynamicFields(
-                        fullTemplate.elements as Element[],
-                        fullTemplate.dynamic_fields
+                if (isMultiTemplateMode) {
+                    // Multi-template mode: load all templates and merge fields
+                    const allFieldsMap = new Map<string, DynamicField>();
+                    
+                    await Promise.all(
+                        selectedTemplates.map(async (templateItem) => {
+                            const fullTemplate = await getTemplate(templateItem.id) as { 
+                                elements?: Element[]; 
+                                dynamic_fields?: TemplateField[] 
+                            };
+                            
+                            if (fullTemplate && fullTemplate.elements) {
+                                const fields = extractDynamicFields(
+                                    fullTemplate.elements as Element[],
+                                    fullTemplate.dynamic_fields
+                                );
+                                
+                                // Merge fields with source tracking
+                                fields.forEach(field => {
+                                    const existing = allFieldsMap.get(field.name);
+                                    if (existing) {
+                                        // Field exists in multiple templates - add source
+                                        existing.templateSources = [
+                                            ...(existing.templateSources || []),
+                                            { id: templateItem.id, name: templateItem.name }
+                                        ];
+                                    } else {
+                                        // New field
+                                        allFieldsMap.set(field.name, {
+                                            ...field,
+                                            templateSources: [{ id: templateItem.id, name: templateItem.name }]
+                                        });
+                                    }
+                                });
+                            }
+                        })
                     );
-                    setTemplateFields(fields);
+                    
+                    // Convert map to sorted array
+                    const mergedFields = Array.from(allFieldsMap.values()).sort((a, b) => {
+                        if (a.type !== b.type) return a.type === 'image' ? -1 : 1;
+                        return a.name.localeCompare(b.name, undefined, { numeric: true });
+                    });
+                    
+                    setTemplateFields(mergedFields);
+                    console.log(`[FieldMappingSection] Merged ${mergedFields.length} fields from ${selectedTemplates.length} templates`);
+                } else if (selectedTemplate) {
+                    // Single template mode (existing logic)
+                    const fullTemplate = await getTemplate(selectedTemplate.id) as { 
+                        elements?: Element[]; 
+                        dynamic_fields?: TemplateField[] 
+                    };
+                    if (fullTemplate && fullTemplate.elements) {
+                        const fields = extractDynamicFields(
+                            fullTemplate.elements as Element[],
+                            fullTemplate.dynamic_fields
+                        );
+                        setTemplateFields(fields);
 
-                    // Calculate next field numbers
-                    const textNums = fields.filter(f => f.type === 'text' && f.name.match(/^text(\d+)$/))
-                        .map(f => parseInt(f.name.replace('text', '')));
-                    const imageNums = fields.filter(f => f.type === 'image' && f.name.match(/^image(\d+)$/))
-                        .map(f => parseInt(f.name.replace('image', '')));
+                        // Calculate next field numbers
+                        const textNums = fields.filter(f => f.type === 'text' && f.name.match(/^text(\d+)$/))
+                            .map(f => parseInt(f.name.replace('text', '')));
+                        const imageNums = fields.filter(f => f.type === 'image' && f.name.match(/^image(\d+)$/))
+                            .map(f => parseInt(f.name.replace('image', '')));
 
-                    setNextTextNumber(textNums.length > 0 ? Math.max(...textNums) + 1 : 1);
-                    setNextImageNumber(imageNums.length > 0 ? Math.max(...imageNums) + 1 : 1);
-                } else {
-                    setTemplateFields([]);
+                        setNextTextNumber(textNums.length > 0 ? Math.max(...textNums) + 1 : 1);
+                        setNextImageNumber(imageNums.length > 0 ? Math.max(...imageNums) + 1 : 1);
+                    } else {
+                        setTemplateFields([]);
+                    }
                 }
             } catch (error) {
                 console.error('Error loading template:', error);
@@ -186,7 +247,7 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
         };
 
         loadTemplateFields();
-    }, [selectedTemplate]);
+    }, [selectedTemplate, selectedTemplates, isMultiTemplateMode]);
 
     // Auto-map fields when template fields are loaded
     useEffect(() => {
@@ -263,9 +324,18 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
     const requiredUnmapped = allFields.filter((f: DynamicField) => f.required && !isMapped(f.name));
 
     // Don't show if no template selected
-    if (!selectedTemplate) {
+    const hasTemplate = isMultiTemplateMode ? selectedTemplates.length > 0 : !!selectedTemplate;
+    if (!hasTemplate) {
         return null;
     }
+    
+    // Helper to get template source display text
+    const getTemplateSourceText = (sources?: { id: string; name: string }[]): string | null => {
+        if (!isMultiTemplateMode || !sources) return null;
+        if (sources.length === selectedTemplates.length) return '(All templates)';
+        if (sources.length === 1) return sources[0].name;
+        return sources.map(s => s.name).join(', ');
+    };
 
     const renderFieldRow = (field: DynamicField) => (
         <div
@@ -316,16 +386,46 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                             </span>
                         )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1 font-mono">
-                        {`{{${field.name}}}`}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <p className="text-xs text-gray-500 font-mono">
+                            {`{{${field.name}}}`}
+                        </p>
+                        {/* Template Source Indicator */}
+                        {isMultiTemplateMode && field.templateSources && (
+                            <span className={cn(
+                                "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                                field.templateSources.length === selectedTemplates.length
+                                    ? "bg-blue-50 text-blue-600 border border-blue-100"
+                                    : "bg-purple-50 text-purple-600 border border-purple-100"
+                            )}>
+                                {getTemplateSourceText(field.templateSources)}
+                            </span>
+                        )}
+                    </div>
                 </div>
 
                 {/* Column Dropdown */}
-                <div ref={openDropdown === field.name ? dropdownRef : null} className="relative w-56">
+                <div className="relative w-56">
                     <button
+                        ref={(el) => {
+                            if (el) buttonRefs.current.set(field.name, el);
+                        }}
                         type="button"
-                        onClick={() => setOpenDropdown(openDropdown === field.name ? null : field.name)}
+                        onClick={(e) => {
+                            if (openDropdown === field.name) {
+                                setOpenDropdown(null);
+                                setDropdownPosition(null);
+                            } else {
+                                const button = e.currentTarget;
+                                const rect = button.getBoundingClientRect();
+                                setDropdownPosition({
+                                    top: rect.bottom + 8,
+                                    left: rect.left,
+                                    width: rect.width
+                                });
+                                setOpenDropdown(field.name);
+                            }
+                        }}
                         className={cn(
                             "w-full flex items-center justify-between gap-2 px-4 py-2.5 border rounded-xl text-left text-sm transition-all",
                             isMapped(field.name)
@@ -344,15 +444,25 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                         )} />
                     </button>
 
-                    {/* Dropdown Menu */}
-                    {openDropdown === field.name && (
-                        <div className="absolute z-20 top-full left-0 right-0 mt-2 bg-white border border-gray-100 rounded-xl shadow-creative-lg max-h-56 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-200">
+                    {/* Dropdown Menu - Rendered via Portal */}
+                    {openDropdown === field.name && dropdownPosition && typeof document !== 'undefined' && createPortal(
+                        <div 
+                            ref={dropdownRef}
+                            className="fixed bg-white border border-gray-100 rounded-xl shadow-2xl max-h-56 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-200"
+                            style={{
+                                top: dropdownPosition.top,
+                                left: dropdownPosition.left,
+                                width: dropdownPosition.width,
+                                zIndex: 99999
+                            }}
+                        >
                             <button
                                 type="button"
                                 onMouseDown={(e) => {
                                     e.preventDefault();
                                     updateFieldMapping(field.name, '');
                                     setOpenDropdown(null);
+                                    setDropdownPosition(null);
                                 }}
                                 className="w-full px-4 py-2.5 text-left text-gray-400 hover:bg-gray-50 text-xs uppercase tracking-wider font-bold"
                             >
@@ -366,6 +476,7 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                                         e.preventDefault();
                                         updateFieldMapping(field.name, header);
                                         setOpenDropdown(null);
+                                        setDropdownPosition(null);
                                     }}
                                     className={cn(
                                         "w-full px-4 py-2.5 text-left text-sm flex items-center justify-between transition-colors",
@@ -380,7 +491,8 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                                     )}
                                 </button>
                             ))}
-                        </div>
+                        </div>,
+                        document.body
                     )}
                 </div>
 
@@ -419,6 +531,7 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
         <section className={cn(
             "bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl p-8 space-y-8 shadow-creative-sm",
             "animate-in slide-in-from-bottom-4 duration-500",
+            "overflow-visible relative z-20",
             className
         )}>
             {/* Section Header */}
@@ -559,7 +672,7 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                                     Image Variables
                                 </h3>
                             </div>
-                            <div className="space-y-3">
+                            <div className="space-y-3 overflow-visible">
                                 {imageFields.map(renderFieldRow)}
                             </div>
                         </div>
@@ -574,18 +687,18 @@ export function FieldMappingSection({ className }: FieldMappingSectionProps) {
                                     Text Variables
                                 </h3>
                             </div>
-                            <div className="space-y-3">
+                            <div className="space-y-3 overflow-visible">
                                 {textFields.map(renderFieldRow)}
                             </div>
                         </div>
                     )}
                     
                     {/* Manual Add Buttons */}
-                     <div className="flex items-center justify-center gap-4 pt-4 opacity-0 hover:opacity-100 transition-opacity duration-300">
-                        <button onClick={handleAddTextField} className="text-xs text-gray-400 hover:text-primary-creative flex items-center gap-1 transition-colors">
+                     <div className="flex items-center justify-center gap-4 pt-4">
+                        <button onClick={handleAddTextField} className="text-xs text-gray-500 hover:text-primary-creative flex items-center gap-1 transition-colors px-3 py-1.5 rounded-lg hover:bg-primary-creative/5 border border-transparent hover:border-primary-creative/20">
                             <Plus className="w-3 h-3" /> Add Text Field
                         </button>
-                         <button onClick={handleAddImageField} className="text-xs text-gray-400 hover:text-green-600 flex items-center gap-1 transition-colors">
+                         <button onClick={handleAddImageField} className="text-xs text-gray-500 hover:text-green-600 flex items-center gap-1 transition-colors px-3 py-1.5 rounded-lg hover:bg-green-50 border border-transparent hover:border-green-200">
                             <Plus className="w-3 h-3" /> Add Image Field
                         </button>
                      </div>

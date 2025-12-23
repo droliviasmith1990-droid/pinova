@@ -244,7 +244,7 @@ export async function getTemplates(): Promise<TemplateListItem[]> {
     try {
         const { data: templates, error } = await supabase
             .from('templates')
-            .select('id, name, thumbnail_url, category, category_id, is_featured, view_count, created_at, updated_at')
+            .select('id, short_id, name, thumbnail_url, category, category_id, is_featured, view_count, created_at, updated_at')
             .eq('user_id', userId)
             .order('updated_at', { ascending: false });
 
@@ -315,7 +315,7 @@ export async function getTemplatesWithElements(
         let query = supabase
             .from('templates')
             .select(`
-                id, name, thumbnail_url, category, category_id, 
+                id, short_id, name, thumbnail_url, category, category_id, 
                 is_featured, view_count, created_at, updated_at,
                 elements,
                 category_data:categories(id, name, slug, icon, color)
@@ -356,6 +356,7 @@ export async function getTemplatesWithElements(
         // Transform the response
         const templates = (data || []).map(t => ({
             id: t.id,
+            short_id: t.short_id,
             name: t.name,
             thumbnail_url: t.thumbnail_url,
             category: t.category,
@@ -390,7 +391,7 @@ export async function getPublicTemplates(): Promise<TemplateListItem[]> {
     try {
         const { data: templates, error } = await supabase
             .from('templates')
-            .select('id, name, thumbnail_url, category, category_id, is_featured, view_count, created_at, updated_at')
+            .select('id, short_id, name, thumbnail_url, category, category_id, is_featured, view_count, created_at, updated_at')
             .eq('is_public', true)
             .order('created_at', { ascending: false })
             .limit(50);
@@ -611,7 +612,7 @@ export async function getTemplatesFiltered(
         let query = supabase
             .from('templates')
             .select(`
-                id, name, thumbnail_url, category, category_id, 
+                id, short_id, name, thumbnail_url, category, category_id, 
                 is_featured, view_count, created_at, updated_at,
                 category_data:categories(id, name, slug, icon, color)
             `);

@@ -10,7 +10,9 @@ import {
     Loader2,
     ChevronDown,
     ChevronUp,
-    X
+    X,
+    ToggleLeft,
+    ToggleRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCampaignWizard } from '@/lib/campaigns/CampaignWizardContext';
@@ -195,6 +197,7 @@ export function PreviewSection({ className }: PreviewSectionProps) {
     const [templateLoading, setTemplateLoading] = useState(true); // Start as true
     const [inspectPin, setInspectPin] = useState<PreviewPin | null>(null);
     const [isExpanded, setIsExpanded] = useState(true);
+    const [previewEnabled, setPreviewEnabled] = useState(false); // Default: OFF
     
     // Determine if we're in multi-template mode
     const isMultiTemplateMode = selectionMode === 'multiple' && selectedTemplates.length > 1;
@@ -299,12 +302,12 @@ export function PreviewSection({ className }: PreviewSectionProps) {
         }
     }, [isGenerating, previewPins, error, setPreviewStatus]);
     
-    // Auto-generate when all requirements are met
+    // Auto-generate when all requirements are met AND preview is enabled
     useEffect(() => {
-        if (csvData && template && Object.keys(fieldMapping).length > 0 && !isGenerating && previewPins.length === 0) {
+        if (previewEnabled && csvData && template && Object.keys(fieldMapping).length > 0 && !isGenerating && previewPins.length === 0) {
             generate();
         }
-    }, [csvData, template, fieldMapping, isGenerating, previewPins.length, generate]);
+    }, [previewEnabled, csvData, template, fieldMapping, isGenerating, previewPins.length, generate]);
     
     // Show loading state while template loads
     if (templateLoading) {
@@ -327,13 +330,15 @@ export function PreviewSection({ className }: PreviewSectionProps) {
     const totalCount = previewPins.length;
     
     return (
-        <div className={cn("bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl overflow-hidden shadow-creative-sm transition-all duration-300 hover:shadow-creative-md", className)}>
+        <div className={cn("bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl overflow-hidden shadow-creative-sm transition-all duration-300 hover:shadow-creative-md relative z-10", className)}>
             {/* Header */}
             <div 
-                className="flex items-center justify-between px-6 py-5 border-b border-gray-100/50 cursor-pointer hover:bg-white/40 transition-colors"
-                onClick={() => setIsExpanded(!isExpanded)}
+                className="flex items-center justify-between px-6 py-5 border-b border-gray-100/50"
             >
-                <div className="flex items-center gap-4">
+                <div 
+                    className="flex items-center gap-4 flex-1 cursor-pointer hover:bg-white/40 transition-colors -ml-2 pl-2 -my-2 py-2 rounded-lg"
+                    onClick={() => setIsExpanded(!isExpanded)}
+                >
                     <div className={cn(
                         "p-2.5 rounded-xl shadow-inner transition-colors",
                         previewStatus === 'ready' ? 'bg-linear-to-br from-green-50 to-green-100 text-green-600' :
@@ -356,21 +361,44 @@ export function PreviewSection({ className }: PreviewSectionProps) {
                             Preview Samples
                         </h3>
                         <p className="text-sm text-gray-500 font-medium mt-0.5">
-                            {isGenerating 
-                                ? `Generating ${progress} of ${totalCount} previews...`
-                                : previewStatus === 'ready'
-                                    ? `${completedCount} previews ready • ${csvData.rowCount} total pins`
-                                    : previewStatus === 'error'
-                                        ? 'Some previews failed to generate'
-                                        : 'Inspect sample pins before generating all'
+                            {!previewEnabled
+                                ? 'Enable preview to inspect sample pins'
+                                : isGenerating 
+                                    ? `Generating ${progress} of ${totalCount} previews...`
+                                    : previewStatus === 'ready'
+                                        ? `${completedCount} previews ready • ${csvData.rowCount} total pins`
+                                        : previewStatus === 'error'
+                                            ? 'Some previews failed to generate'
+                                            : 'Inspect sample pins before generating all'
                             }
                         </p>
                     </div>
                 </div>
                 
                 <div className="flex items-center gap-3">
+                    {/* Preview Toggle */}
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewEnabled(!previewEnabled);
+                        }}
+                        className={cn(
+                            "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+                            previewEnabled
+                                ? "bg-primary-creative/10 text-primary-creative border border-primary-creative/30"
+                                : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
+                        )}
+                    >
+                        {previewEnabled ? (
+                            <ToggleRight className="w-4 h-4" />
+                        ) : (
+                            <ToggleLeft className="w-4 h-4" />
+                        )}
+                        {previewEnabled ? 'On' : 'Off'}
+                    </button>
+                    
                     {/* Validation summary */}
-                    {previewStatus === 'ready' && (
+                    {previewEnabled && previewStatus === 'ready' && (
                         <div className="flex items-center gap-2 mr-4">
                             {totalErrors > 0 ? (
                                 <div className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-700 border border-red-100 rounded-full text-xs font-semibold shadow-sm">
@@ -392,7 +420,7 @@ export function PreviewSection({ className }: PreviewSectionProps) {
                     )}
                     
                     {/* Regenerate button */}
-                    {!isGenerating && previewPins.length > 0 && (
+                    {previewEnabled && !isGenerating && previewPins.length > 0 && (
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -419,62 +447,83 @@ export function PreviewSection({ className }: PreviewSectionProps) {
             {/* Content */}
             {isExpanded && (
                 <div className="p-6 bg-surface-light/50">
-                    {/* Error State */}
-                    {error && (
-                        <div className="mb-6 p-4 bg-red-50/50 border border-red-200/60 rounded-xl backdrop-blur-sm">
-                            <div className="flex items-center gap-2 text-red-700 mb-1">
-                                <XCircle className="w-5 h-5" />
-                                <span className="font-semibold">Preview Generation Failed</span>
+                    {/* Disabled State */}
+                    {!previewEnabled ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                                <Eye className="w-8 h-8 text-gray-400" />
                             </div>
-                            <p className="ml-7 text-sm text-red-600/90">{error}</p>
+                            <h4 className="text-gray-900 font-semibold mb-2">Preview Disabled</h4>
+                            <p className="text-sm text-gray-500 max-w-sm">
+                                Enable the toggle above to generate sample previews before creating your campaign.
+                            </p>
+                            <button
+                                onClick={() => setPreviewEnabled(true)}
+                                className="mt-4 px-4 py-2 bg-primary-creative text-white rounded-lg font-medium hover:bg-primary-creative/90 transition-colors"
+                            >
+                                Enable Preview
+                            </button>
                         </div>
-                    )}
-                    
-                    {/* Preview Grid */}
-                    <PreviewGrid
-                        pins={previewPins}
-                        onInspect={setInspectPin}
-                    />
-                    
-                    {/* Field Mapping Summary */}
-                    {Object.keys(fieldMapping).length > 0 && (
-                        <div className="mt-8 pt-6 border-t border-gray-200/60">
-                            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">
-                                Field Mapping Used
-                            </h4>
-                            <div className="flex flex-wrap gap-3">
-                                {Object.entries(fieldMapping).map(([templateField, csvColumn]) => (
-                                    <div 
-                                        key={templateField}
-                                        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200/60 rounded-lg text-xs shadow-sm"
-                                    >
-                                        <span className="font-bold text-gray-700">{templateField}</span>
-                                        <span className="text-gray-300">→</span>
-                                        <span className="font-medium text-primary-creative bg-primary-creative/5 px-1.5 py-0.5 rounded">{csvColumn}</span>
+                    ) : (
+                        <>
+                            {/* Error State */}
+                            {error && (
+                                <div className="mb-6 p-4 bg-red-50/50 border border-red-200/60 rounded-xl backdrop-blur-sm">
+                                    <div className="flex items-center gap-2 text-red-700 mb-1">
+                                        <XCircle className="w-5 h-5" />
+                                        <span className="font-semibold">Preview Generation Failed</span>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                                    <p className="ml-7 text-sm text-red-600/90">{error}</p>
+                                </div>
+                            )}
                     
-                    {/* Info about upcoming generation */}
-                    {previewStatus === 'ready' && (
-                        <div className="mt-6 p-4 bg-blue-50/50 border border-blue-200/60 rounded-xl backdrop-blur-sm">
-                            <div className="flex items-start gap-3">
-                                <div className="p-2 bg-blue-100/50 rounded-lg text-blue-600">
-                                     <Eye className="w-5 h-5 shrink-0" />
+                            {/* Preview Grid */}
+                            <PreviewGrid
+                                pins={previewPins}
+                                onInspect={setInspectPin}
+                            />
+                    
+                            {/* Field Mapping Summary */}
+                            {Object.keys(fieldMapping).length > 0 && (
+                                <div className="mt-8 pt-6 border-t border-gray-200/60">
+                                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">
+                                        Field Mapping Used
+                                    </h4>
+                                    <div className="flex flex-wrap gap-3">
+                                        {Object.entries(fieldMapping).map(([templateField, csvColumn]) => (
+                                            <div 
+                                                key={templateField}
+                                                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200/60 rounded-lg text-xs shadow-sm"
+                                            >
+                                                <span className="font-bold text-gray-700">{templateField}</span>
+                                                <span className="text-gray-300">→</span>
+                                                <span className="font-medium text-primary-creative bg-primary-creative/5 px-1.5 py-0.5 rounded">{csvColumn}</span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="text-sm text-blue-900 font-bold">
-                                        Ready to generate {csvData.rowCount.toLocaleString()} pins
-                                    </p>
-                                    <p className="text-sm text-blue-700 mt-1 leading-relaxed">
-                                        These previews show how your first 5 pins will look. 
-                                        Click <span className="font-semibold">&quot;Create Campaign&quot;</span> below to generate all pins.
-                                    </p>
+                            )}
+                    
+                            {/* Info about upcoming generation */}
+                            {previewStatus === 'ready' && (
+                                <div className="mt-6 p-4 bg-blue-50/50 border border-blue-200/60 rounded-xl backdrop-blur-sm">
+                                    <div className="flex items-start gap-3">
+                                        <div className="p-2 bg-blue-100/50 rounded-lg text-blue-600">
+                                             <Eye className="w-5 h-5 shrink-0" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm text-blue-900 font-bold">
+                                                Ready to generate {csvData.rowCount.toLocaleString()} pins
+                                            </p>
+                                            <p className="text-sm text-blue-700 mt-1 leading-relaxed">
+                                                These previews show how your first 5 pins will look. 
+                                                Click <span className="font-semibold">&quot;Create Campaign&quot;</span> below to generate all pins.
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
+                            )}
+                        </>
                     )}
                 </div>
             )}

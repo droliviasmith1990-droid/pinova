@@ -6,7 +6,9 @@ import { ArrowLeft, Loader2, Rocket } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCampaignWizard } from '@/lib/campaigns/CampaignWizardContext';
 import { createCampaign } from '@/lib/db/campaigns';
+import { getTemplate } from '@/lib/db/templates';
 import { toast } from 'sonner';
+import { TemplateSnapshot } from '@/types/database.types';
 
 interface FormActionsProps {
     className?: string;
@@ -17,7 +19,10 @@ export function FormActions({ className }: FormActionsProps) {
     const { 
         campaignName, 
         csvData, 
-        selectedTemplate, 
+        selectedTemplate,
+        selectedTemplates,
+        selectionMode,
+        distributionMode,
         fieldMapping,
         previewStatus,
         isFormValid,
@@ -48,17 +53,58 @@ export function FormActions({ className }: FormActionsProps) {
             return;
         }
 
-        if (!csvData || !selectedTemplate) {
-            toast.error('Missing required data');
+        // Check for required data - support both single and multi-template modes
+        const isMultiTemplate = selectionMode === 'multiple' && selectedTemplates.length > 1;
+        const hasTemplate = isMultiTemplate ? selectedTemplates.length > 0 : !!selectedTemplate;
+        
+        if (!csvData || !hasTemplate) {
+            toast.error('Missing required data', {
+                description: !csvData ? 'Please upload a CSV file' : 'Please select a template'
+            });
             return;
         }
 
         setIsSubmitting(true);
 
         try {
+            // Determine if multi-template mode
+            const isMultiTemplate = selectionMode === 'multiple' && selectedTemplates.length > 1;
+            
+            // Build template snapshots for multi-template mode
+            let templateSnapshot: TemplateSnapshot[] | undefined;
+            let templateIds: string[] | undefined;
+            
+            if (isMultiTemplate) {
+                templateIds = selectedTemplates.map(t => t.id);
+                
+                // Load full template data for snapshots
+                const snapshots = await Promise.all(
+                    selectedTemplates.map(async (t) => {
+                        const fullTemplate = await getTemplate(t.id);
+                        if (fullTemplate) {
+                            return {
+                                id: t.id,
+                                short_id: (t as { short_id?: string }).short_id || t.id.slice(0, 8),
+                                name: t.name,
+                                elements: fullTemplate.elements,
+                                canvas_size: fullTemplate.canvas_size,
+                                background_color: fullTemplate.background_color || '#ffffff',
+                            } as TemplateSnapshot;
+                        }
+                        return null;
+                    })
+                );
+                templateSnapshot = snapshots.filter((s): s is TemplateSnapshot => s !== null);
+            }
+            
             const campaign = await createCampaign({
                 name: campaignName.trim(),
-                template_id: selectedTemplate.id,
+                template_id: isMultiTemplate ? selectedTemplates[0].id : selectedTemplate!.id,
+                // Multi-template fields
+                template_ids: templateIds,
+                distribution_mode: isMultiTemplate ? distributionMode : undefined,
+                template_snapshot: templateSnapshot,
+                // Standard fields
                 csv_data: csvData.rows,
                 field_mapping: fieldMapping,
                 total_pins: csvData.rowCount

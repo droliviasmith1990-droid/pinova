@@ -17,12 +17,17 @@ import {
 import { PreviewSection } from '@/components/campaign/PreviewSection';
 
 function StepIndicator() {
-    const { campaignName, csvData, selectedTemplate, fieldMapping } = useCampaignWizard();
+    const { campaignName, csvData, selectedTemplate, selectedTemplates, selectionMode, fieldMapping } = useCampaignWizard();
+    
+    // Determine if a template is selected (either single or multi mode)
+    const hasTemplateSelected = selectionMode === 'multiple' 
+        ? selectedTemplates.length > 0 
+        : !!selectedTemplate;
 
     const steps = [
         { id: 1, name: 'Setup', status: campaignName && csvData ? 'completed' : 'current' },
-        { id: 2, name: 'Template', status: selectedTemplate ? 'completed' : (campaignName && csvData ? 'current' : 'pending') },
-        { id: 3, name: 'Mapping', status: Object.keys(fieldMapping).length > 0 ? 'completed' : (selectedTemplate ? 'current' : 'pending') },
+        { id: 2, name: 'Template', status: hasTemplateSelected ? 'completed' : (campaignName && csvData ? 'current' : 'pending') },
+        { id: 3, name: 'Mapping', status: Object.keys(fieldMapping).length > 0 ? 'completed' : (hasTemplateSelected ? 'current' : 'pending') },
         { id: 4, name: 'Preview', status: Object.keys(fieldMapping).length > 0 ? 'current' : 'pending' },
     ];
 
@@ -58,9 +63,14 @@ function StepIndicator() {
 function SinglePageContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { selectedTemplate, setSelectedTemplate, csvData, fieldMapping } = useCampaignWizard();
+    const { selectedTemplate, selectedTemplates, selectionMode, setSelectedTemplate, csvData, fieldMapping } = useCampaignWizard();
     const fieldMappingRef = useRef<HTMLDivElement>(null);
     const hasLoadedFromUrlRef = useRef(false);
+    
+    // Determine if a template is selected (either single or multi mode)
+    const hasTemplateSelected = selectionMode === 'multiple' 
+        ? selectedTemplates.length > 0 
+        : !!selectedTemplate;
 
     // Load template from URL parameter on mount
     useEffect(() => {
@@ -169,21 +179,21 @@ function SinglePageContent() {
                 <div 
                     ref={fieldMappingRef} 
                     className={cn(
-                        "transition-all duration-700 ease-out",
-                        selectedTemplate ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10 pointer-events-none h-0 overflow-hidden"
+                        "transition-all duration-700 ease-out relative z-30",
+                        hasTemplateSelected ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10 pointer-events-none h-0"
                     )}
                 >
-                    {selectedTemplate && <FieldMappingSection />}
+                    {hasTemplateSelected && <FieldMappingSection />}
                 </div>
 
                 {/* Preview Section - Shows after field mapping is configured */}
                 <div className={cn(
-                    "transition-all duration-700 ease-out delay-100",
-                    selectedTemplate && csvData && Object.keys(fieldMapping).length > 0
+                    "transition-all duration-700 ease-out delay-100 relative z-10",
+                    hasTemplateSelected && csvData && Object.keys(fieldMapping).length > 0
                         ? "opacity-100 translate-y-0"
                         : "opacity-0 translate-y-10 pointer-events-none h-0 overflow-hidden"
                 )}>
-                    {selectedTemplate && csvData && Object.keys(fieldMapping).length > 0 && (
+                    {hasTemplateSelected && csvData && Object.keys(fieldMapping).length > 0 && (
                         <PreviewSection />
                     )}
                 </div>

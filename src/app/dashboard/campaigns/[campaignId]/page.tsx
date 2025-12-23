@@ -553,6 +553,9 @@ export default function CampaignDetailPage() {
                             templateElements={template.elements}
                             canvasSize={template.canvas_size}
                             backgroundColor={template.background_color}
+                            // Multi-template props
+                            templateSnapshots={campaign.template_snapshot || undefined}
+                            distributionMode={campaign.distribution_mode || 'sequential'}
                             csvData={csvData}
                             fieldMapping={fieldMapping}
                             initialSettings={settings}

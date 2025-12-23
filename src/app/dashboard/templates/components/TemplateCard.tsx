@@ -7,6 +7,7 @@ import {
     MoreVertical, 
     Edit, 
     Copy, 
+    Check,
     Trash2, 
     Rocket, 
     Star,
@@ -41,6 +42,20 @@ export function TemplateCard({
 }: TemplateCardProps) {
     const [showMenu, setShowMenu] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
+    const [copied, setCopied] = useState(false);
+
+    const handleCopyShortId = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!template.short_id) return;
+        
+        try {
+            await navigator.clipboard.writeText(template.short_id);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (error) {
+            console.error('Failed to copy:', error);
+        }
+    };
 
     const handleCheckboxClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -230,6 +245,26 @@ export function TemplateCard({
                 <h3 className="text-sm font-medium text-gray-900 truncate">
                     {template.name}
                 </h3>
+                
+                {/* Template ID with Copy Button */}
+                {template.short_id && (
+                    <div className="flex items-center gap-1.5">
+                        <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono text-gray-600 truncate max-w-[140px]">
+                            {template.short_id}
+                        </code>
+                        <button
+                            onClick={handleCopyShortId}
+                            className="p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                            title="Copy Template ID"
+                        >
+                            {copied ? (
+                                <Check className="w-3.5 h-3.5 text-green-600" />
+                            ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                            )}
+                        </button>
+                    </div>
+                )}
                 
                 {/* Category */}
                 {template.category_data && (

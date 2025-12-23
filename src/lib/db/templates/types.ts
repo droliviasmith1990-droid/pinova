@@ -34,6 +34,7 @@ export interface SaveTemplateData {
  */
 export interface TemplateListItem {
     id: string;
+    short_id: string | null;  // User-friendly ID for API access
     name: string;
     thumbnail_url: string | null;
     category: string | null;
