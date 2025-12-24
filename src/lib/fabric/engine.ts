@@ -680,8 +680,10 @@ export async function renderTemplate(
     fieldMapping: FieldMapping = {}
 ): Promise<void> {
 
-    // Safety: Check if canvas is disposed
-    if (!canvas.getElement()) return;
+    // Safety: Check if canvas is disposed (server-safe check)
+    // On server, we can't use getElement() as there's no DOM
+    const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
+    if (isBrowser && !canvas.getElement()) return;
 
     // 🔍 DEBUG: Canvas state before render
     if (DEBUG_RENDER) {
