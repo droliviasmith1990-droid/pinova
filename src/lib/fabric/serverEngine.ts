@@ -472,18 +472,7 @@ async function renderElement(
             // NOTE: splitByGrapheme removed to prevent ugly mid-word breaks like "CHI-CKEN"
             // Word-boundary wrapping is preferred for marketing text
         });
-        
-        // For autoFitText, add a clipPath to absolutely ensure text stays within container bounds
-        if (textEl.autoFitText && textEl.height) {
-            textbox.clipPath = new Rect({
-                width: textEl.width,
-                height: textEl.height,
-                left: 0,
-                top: 0,
-                originX: 'left',
-                originY: 'top',
-            });
-        }
+        // NOTE: clipPath removed - it caused display issues with Fabric.js 6.x\n        // The calculateFitFontSizeServer function already ensures text fits within container
 
         if (textEl.shadowColor) {
             textbox.shadow = new Shadow({
