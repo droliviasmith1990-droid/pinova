@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { StaticCanvas } from 'fabric/node';
 import { v4 as uuidv4 } from 'uuid';
 import { Element } from '@/types/editor';
-import { renderTemplate, RenderConfig, FieldMapping } from '@/lib/fabric/engine';
+import { renderTemplateServer, RenderConfig, FieldMapping } from '@/lib/fabric/serverEngine';
 import { createServiceRoleClient } from '@/lib/supabaseServer';
 import { validateApiKey } from '@/lib/db/apiKeys';
 import { getTemplateByShortId } from '@/lib/db/templates';
@@ -112,8 +112,7 @@ async function renderAndUploadPin(
             backgroundColor,
         };
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await renderTemplate(canvas as any, elements, config, rowData, fieldMapping);
+        await renderTemplateServer(canvas, elements, config, rowData, fieldMapping);
 
         // Export to data URL
         const dataUrl = canvas.toDataURL({
