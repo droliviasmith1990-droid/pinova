@@ -173,8 +173,9 @@ export function createFabricObject(element: Element): fabric.FabricObject | null
                 width: element.width,
                 fontSize: fontSize,
                 fontFamily: textEl.fontFamily || 'Arial',
-                // Font weight: use fontWeight property (100-900), fallback to fontStyle for backward compatibility
-                fontWeight: textEl.fontWeight || (textEl.fontStyle?.includes('bold') ? 'bold' : 'normal'),
+                // Font weight: For custom fonts, use native weight from font file (don't apply synthetic weight)
+                // For other fonts, use fontWeight property (100-900), fallback to fontStyle for backward compatibility
+                fontWeight: textEl.fontProvider === 'custom' ? 'normal' : (textEl.fontWeight || (textEl.fontStyle?.includes('bold') ? 'bold' : 'normal')),
                 fontStyle: textEl.fontStyle?.includes('italic') ? 'italic' : 'normal',
                 // Hollow text: transparent fill, otherwise use specified fill
                 fill: textEl.hollowText ? 'transparent' : (textEl.fill || '#000000'),
