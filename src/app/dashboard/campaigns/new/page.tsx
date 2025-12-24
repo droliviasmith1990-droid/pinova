@@ -86,6 +86,7 @@ function SinglePageContent() {
                     // Convert to TemplateListItem format
                     const templateListItem: TemplateListItem = {
                         id: template.id,
+                        short_id: template.short_id || null,
                         name: template.name,
                         thumbnail_url: template.thumbnail_url || null,
                         is_featured: template.is_featured || false,

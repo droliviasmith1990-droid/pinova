@@ -53,10 +53,10 @@ function getIconComponent(iconName: string | null): LucideIcon {
 
 // Demo templates for when database is not configured
 const demoGalleryTemplates: TemplateListItem[] = [
-    { id: 'demo-1', name: 'Recipe Card', thumbnail_url: null, category: 'Food', category_id: null, is_featured: true, view_count: 120, created_at: '', updated_at: '' },
-    { id: 'demo-2', name: 'Inspirational Quote', thumbnail_url: null, category: 'Quote', category_id: null, is_featured: false, view_count: 85, created_at: '', updated_at: '' },
-    { id: 'demo-3', name: 'Product Showcase', thumbnail_url: null, category: 'Product', category_id: null, is_featured: true, view_count: 200, created_at: '', updated_at: '' },
-    { id: 'demo-4', name: 'Stats Infographic', thumbnail_url: null, category: 'Infographic', category_id: null, is_featured: false, view_count: 50, created_at: '', updated_at: '' },
+    { id: 'demo-1', short_id: 'demo-1', name: 'Recipe Card', thumbnail_url: null, category: 'Food', category_id: null, is_featured: true, view_count: 120, created_at: '', updated_at: '' },
+    { id: 'demo-2', short_id: 'demo-2', name: 'Inspirational Quote', thumbnail_url: null, category: 'Quote', category_id: null, is_featured: false, view_count: 85, created_at: '', updated_at: '' },
+    { id: 'demo-3', short_id: 'demo-3', name: 'Product Showcase', thumbnail_url: null, category: 'Product', category_id: null, is_featured: true, view_count: 200, created_at: '', updated_at: '' },
+    { id: 'demo-4', short_id: 'demo-4', name: 'Stats Infographic', thumbnail_url: null, category: 'Infographic', category_id: null, is_featured: false, view_count: 50, created_at: '', updated_at: '' },
 ];
 
 // ============================================
