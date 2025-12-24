@@ -5,11 +5,17 @@
  * This module is specifically for the /api/v1/generate endpoint.
  * 
  * IMPORTANT: Fonts must be registered BEFORE creating canvas objects.
- * On Vercel, only system fonts are available by default.
+ * Custom fonts are bundled via next.config.ts outputFileTracingIncludes.
  */
 
 import { StaticCanvas, Rect, FabricImage, Textbox, Circle, Path, Shadow, Group } from 'fabric/node';
 import { Element, TextElement, ImageElement, ShapeElement, FrameElement } from '@/types/editor';
+import * as path from 'path';
+import * as fs from 'fs';
+
+// Use require for canvas to avoid TypeScript type errors
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { registerFont } = require('canvas');
 
 // Types
 export interface RenderConfig {
@@ -25,53 +31,112 @@ export interface FieldMapping {
 // Debug flag - enabled for debugging API issues
 const DEBUG = true; // Temporarily enabled for debugging
 
+// Track registered fonts to avoid duplicate registration
+const registeredFonts = new Set<string>();
+
 /**
- * Map custom fonts to server-safe fallbacks
- * Vercel serverless doesn't have custom fonts installed
+ * Register fonts from the bundled fonts directory
+ * Must be called before creating any canvas/text objects
+ */
+function initializeFonts(): void {
+    // Try multiple possible paths for the fonts directory
+    // Vercel serverless functions have different paths than local dev
+    const possiblePaths = [
+        path.join(process.cwd(), 'public', 'fonts'),  // Local development
+        path.join(process.cwd(), '.next', 'server', 'public', 'fonts'),  // Vercel bundled
+        '/var/task/public/fonts',  // Vercel Lambda path
+        '/var/task/.next/server/public/fonts', // Alternative Vercel path
+    ];
+
+    let fontsDir: string | null = null;
+    for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+            fontsDir = p;
+            console.log(`[ServerEngine] Found fonts directory: ${p}`);
+            break;
+        }
+    }
+
+    if (!fontsDir) {
+        console.warn('[ServerEngine] No fonts directory found, using system fonts only');
+        return;
+    }
+
+    // Font family mapping: filename -> family name
+    const fontMapping: Record<string, string> = {
+        'Roboto-Regular.ttf': 'Roboto',
+        'Roboto-Bold.ttf': 'Roboto',
+        'OpenSans-Regular.ttf': 'Open Sans',
+        'OpenSans-Bold.ttf': 'Open Sans',
+        'Poppins-Regular.ttf': 'Poppins',
+        'Poppins-Bold.ttf': 'Poppins',
+        'Montserrat-Regular.ttf': 'Montserrat',
+        'Montserrat-Bold.ttf': 'Montserrat',
+        'Inter-Regular.ttf': 'Inter',
+        'Inter-Bold.ttf': 'Inter',
+    };
+
+    try {
+        const files = fs.readdirSync(fontsDir);
+        for (const file of files) {
+            if (!file.endsWith('.ttf') && !file.endsWith('.otf')) continue;
+            
+            const fontPath = path.join(fontsDir, file);
+            const familyName = fontMapping[file] || file.replace(/[-_](Regular|Bold|Italic)?\.(ttf|otf)$/i, '');
+            const weight = file.toLowerCase().includes('bold') ? 'bold' : 'normal';
+            const style = file.toLowerCase().includes('italic') ? 'italic' : 'normal';
+            
+            const fontKey = `${familyName}-${weight}-${style}`;
+            if (registeredFonts.has(fontKey)) continue;
+            
+            try {
+                registerFont(fontPath, {
+                    family: familyName,
+                    weight: weight,
+                    style: style,
+                });
+                registeredFonts.add(fontKey);
+                console.log(`[ServerEngine] Registered font: ${familyName} (${weight}, ${style})`);
+            } catch (err) {
+                console.error(`[ServerEngine] Failed to register font ${file}:`, err);
+            }
+        }
+    } catch (err) {
+        console.error('[ServerEngine] Error reading fonts directory:', err);
+    }
+}
+
+// Initialize fonts on module load
+initializeFonts();
+
+/**
+ * Get font with fallback - returns original font if registered, otherwise fallback
  */
 function getServerSafeFont(fontFamily: string): string {
-    // Map common custom fonts to system fonts available on Vercel/Linux
-    const fontMap: Record<string, string> = {
-        // Google Fonts -> System fallbacks
+    // Check if font is registered
+    const baseFamily = fontFamily.split(',')[0].trim().replace(/["']/g, '');
+    if (registeredFonts.has(`${baseFamily}-normal-normal`) || 
+        registeredFonts.has(`${baseFamily}-bold-normal`)) {
+        console.log(`[ServerEngine] Using registered font: "${baseFamily}"`);
+        return baseFamily;
+    }
+    
+    // Fallback to system fonts
+    const fallbacks: Record<string, string> = {
         'Roboto': 'sans-serif',
         'Open Sans': 'sans-serif',
-        'Lato': 'sans-serif',
-        'Montserrat': 'sans-serif',
         'Poppins': 'sans-serif',
+        'Montserrat': 'sans-serif',
         'Inter': 'sans-serif',
-        'Oswald': 'sans-serif',
-        'Playfair Display': 'serif',
-        'Merriweather': 'serif',
-        'Georgia': 'serif',
-        'Times New Roman': 'serif',
-        'Lobster': 'cursive',
-        'Pacifico': 'cursive',
-        'Dancing Script': 'cursive',
-        'Courier New': 'monospace',
-        'Consolas': 'monospace',
-        'Monaco': 'monospace',
-        // Common fonts
         'Arial': 'sans-serif',
         'Helvetica': 'sans-serif',
-        'Verdana': 'sans-serif',
-        'Impact': 'sans-serif',
     };
     
-    // Check if font is in map
-    const lowercaseFont = fontFamily.toLowerCase();
-    for (const [key, value] of Object.entries(fontMap)) {
-        if (lowercaseFont.includes(key.toLowerCase())) {
+    for (const [key, value] of Object.entries(fallbacks)) {
+        if (baseFamily.toLowerCase().includes(key.toLowerCase())) {
             console.log(`[ServerEngine] Font fallback: "${fontFamily}" -> "${value}"`);
             return value;
         }
-    }
-    
-    // Default fallback
-    if (fontFamily.includes('serif') || fontFamily.includes('Serif')) {
-        return 'serif';
-    }
-    if (fontFamily.includes('mono') || fontFamily.includes('Mono')) {
-        return 'monospace';
     }
     
     console.log(`[ServerEngine] Font fallback: "${fontFamily}" -> "sans-serif" (default)`);

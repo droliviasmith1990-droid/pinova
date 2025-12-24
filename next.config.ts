@@ -23,6 +23,11 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Bundle fonts for serverless functions (needed for canvas text rendering)
+  outputFileTracingIncludes: {
+    '/api/v1/generate': ['./public/fonts/**/*'],
+  },
 };
 
 export default nextConfig;
+
