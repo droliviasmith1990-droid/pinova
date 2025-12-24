@@ -172,16 +172,29 @@ function replaceDynamicFields(text: string, rowData: Record<string, string>, fie
 function getDynamicImageUrl(element: ImageElement, rowData: Record<string, string>, fieldMapping: FieldMapping): string {
     const src = element.imageUrl || '';
     
+    console.log(`[ServerEngine] getDynamicImageUrl for "${element.name}": isDynamic=${element.isDynamic}, dynamicSource="${element.dynamicSource}", imageUrl="${src?.substring(0, 60)}"`);
+    
     if (element.isDynamic && element.dynamicSource) {
         const col = fieldMapping[element.dynamicSource];
-        if (col && rowData[col]) return rowData[col];
-        if (rowData[element.dynamicSource]) return rowData[element.dynamicSource];
+        console.log(`[ServerEngine]   Mapped column: "${element.dynamicSource}" -> "${col}", value in rowData: "${rowData[col]?.substring(0, 60) || 'NOT FOUND'}"`);
+        if (col && rowData[col]) {
+            console.log(`[ServerEngine]   Using mapped value from rowData[${col}]`);
+            return rowData[col];
+        }
+        if (rowData[element.dynamicSource]) {
+            console.log(`[ServerEngine]   Using direct value from rowData[${element.dynamicSource}]`);
+            return rowData[element.dynamicSource];
+        }
+        console.warn(`[ServerEngine]   Dynamic source "${element.dynamicSource}" not found in rowData! Available keys: ${Object.keys(rowData).join(', ')}`);
     }
     
     if (src.includes('{{')) {
-        return replaceDynamicFields(src, rowData, fieldMapping);
+        const resolved = replaceDynamicFields(src, rowData, fieldMapping);
+        console.log(`[ServerEngine]   Replaced template fields: "${resolved.substring(0, 60)}"`);
+        return resolved;
     }
     
+    console.log(`[ServerEngine]   Using static imageUrl: "${src.substring(0, 60)}"`);
     return src;
 }
 

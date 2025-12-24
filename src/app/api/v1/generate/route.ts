@@ -6,6 +6,7 @@ import { renderTemplateServer, RenderConfig, FieldMapping } from '@/lib/fabric/s
 import { createServiceRoleClient } from '@/lib/supabaseServer';
 import { validateApiKey } from '@/lib/db/apiKeys';
 import { getTemplateByShortId } from '@/lib/db/templates';
+import { uploadToS3, isTebiConfigured } from '@/lib/s3';
 
 // Vercel Serverless Config
 export const maxDuration = 60; // Allow up to 60s for batch processing
@@ -124,11 +125,23 @@ async function renderAndUploadPin(
         const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
         const buffer = Buffer.from(base64Data, 'base64');
 
-        // Upload to Supabase Storage with user-specific path
+        // Upload to Tebi S3 Storage (preferred) or fall back to Supabase
         const timestamp = Date.now();
-        const fileName = `${userId}/${timestamp}_${uuidv4()}.png`;
-        const bucketName = 'generated_pins';
+        const fileName = `pins/${userId}/${timestamp}_${uuidv4()}.png`;
 
+        if (isTebiConfigured()) {
+            // Use Tebi S3
+            const publicUrl = await uploadToS3(fileName, buffer, 'image/png');
+            if (publicUrl) {
+                console.log(`[API] Uploaded to Tebi S3: ${publicUrl}`);
+                return { url: publicUrl };
+            }
+            // Fall through to Supabase if Tebi fails
+            console.warn('[API] Tebi upload failed, falling back to Supabase');
+        }
+
+        // Fallback: Upload to Supabase Storage
+        const bucketName = 'generated_pins';
         const { error: uploadError } = await supabase.storage
             .from(bucketName)
             .upload(fileName, buffer, {
@@ -140,11 +153,12 @@ async function renderAndUploadPin(
             throw new Error(`Upload failed: ${uploadError.message}`);
         }
 
-        // Get public URL
+        // Get public URL from Supabase
         const { data: { publicUrl } } = supabase.storage
             .from(bucketName)
             .getPublicUrl(fileName);
 
+        console.log(`[API] Uploaded to Supabase: ${publicUrl}`);
         return { url: publicUrl };
     } finally {
         // Always cleanup canvas
