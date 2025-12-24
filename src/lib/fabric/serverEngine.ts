@@ -577,7 +577,9 @@ async function renderElement(
             textAlign: textEl.align || 'left',
             lineHeight: textEl.lineHeight || 1.2,
             charSpacing: (textEl.letterSpacing || 0) * 10,
-            fontWeight: textEl.fontWeight || (textEl.fontStyle?.includes('bold') ? 'bold' : 'normal'),
+            // Font weight: For custom fonts, use native weight from font file (don't synthetic weight)
+            // For other fonts, use fontWeight property (100-900), fallback to fontStyle for backward compatibility
+            fontWeight: textEl.fontProvider === 'custom' ? 'normal' : (textEl.fontWeight || (textEl.fontStyle?.includes('bold') ? 'bold' : 'normal')),
             fontStyle: textEl.fontStyle?.includes('italic') ? 'italic' : 'normal',
             underline: textEl.textDecoration === 'underline',
             linethrough: textEl.textDecoration === 'line-through',
