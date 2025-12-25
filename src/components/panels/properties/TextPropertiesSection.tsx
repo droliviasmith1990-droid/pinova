@@ -6,6 +6,7 @@ import { useEditorStore } from '@/stores/editorStore';
 import { TextElement } from '@/types/editor';
 import { cn } from '@/lib/utils';
 import { SectionHeader } from './shared';
+import { calculateFitFontSize } from '@/lib/canvas/textUtils';
 
 interface TextPropertiesSectionProps {
     element: TextElement;
@@ -18,6 +19,20 @@ export const TextPropertiesSection = memo(function TextPropertiesSection({ eleme
     const liveElement = useEditorStore((state) => 
         state.elements.find(el => el.id === element.id) as TextElement | undefined
     ) || element;
+
+    // Calculate display font size for auto-fit mode (read-only)
+    const displayFontSize = liveElement.autoFitText ? calculateFitFontSize(
+        liveElement.previewText || liveElement.text || '',
+        liveElement.width,
+        liveElement.height,
+        liveElement.fontFamily || 'Arial',
+        liveElement.fontWeight || 400,
+        liveElement.lineHeight || 1.2,
+        liveElement.letterSpacing || 0,
+        liveElement.maxFontSize,
+        liveElement.minFontSize,
+        liveElement.autoFitPadding
+    ) : liveElement.fontSize;
     
     // Local state for preview mode toggle
     const [showPreview, setShowPreview] = useState(!!liveElement.previewText);
@@ -265,27 +280,62 @@ export const TextPropertiesSection = memo(function TextPropertiesSection({ eleme
                             <span className="text-sm text-gray-600">Current Size</span>
                             <div className="flex items-center gap-2">
                                 <span className="text-lg font-semibold text-blue-600">
-                                    {liveElement.fontSize || 16}
+                                    {displayFontSize || 16}
                                 </span>
                                 <span className="text-xs text-gray-400">px (auto)</span>
                             </div>
                         </div>
                         
-                        {/* Maximum Font Size */}
+                        {/* Max Size Control */}
                         <div className="flex items-center justify-between">
                             <span className="text-sm text-gray-600">Max Size</span>
-                            <input
-                                type="number"
-                                min={8}
-                                max={500}
-                                value={liveElement.maxFontSize || 200}
-                                onChange={(e) => handleChange({ maxFontSize: parseInt(e.target.value) || 200 })}
-                                className="w-20 px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none text-center"
-                            />
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    min={8}
+                                    max={500}
+                                    value={liveElement.maxFontSize || 48}
+                                    onChange={(e) => handleChange({ maxFontSize: parseInt(e.target.value) || 48 })}
+                                    className="w-16 px-2 py-1 text-sm border border-gray-200 rounded text-center focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none"
+                                />
+                                <span className="text-xs text-gray-400">px</span>
+                            </div>
+                        </div>
+
+                        {/* Min Size Control */}
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-600">Min Size</span>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={100}
+                                    value={liveElement.minFontSize || 8}
+                                    onChange={(e) => handleChange({ minFontSize: parseInt(e.target.value) || 8 })}
+                                    className="w-16 px-2 py-1 text-sm border border-gray-200 rounded text-center focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none"
+                                />
+                                <span className="text-xs text-gray-400">px</span>
+                            </div>
+                        </div>
+
+                        {/* Padding Control */}
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-600">Padding</span>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    value={liveElement.autoFitPadding ?? 15}
+                                    onChange={(e) => handleChange({ autoFitPadding: parseInt(e.target.value) || 0 })}
+                                    className="w-16 px-2 py-1 text-sm border border-gray-200 rounded text-center focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none"
+                                />
+                                <span className="text-xs text-gray-400">px</span>
+                            </div>
                         </div>
                         
-                        <p className="text-[10px] text-gray-400">
-                            Font size auto-adjusts between 8px and max size to fit the text box.
+                        <p className="text-[10px] text-gray-400 leading-tight">
+                            Adjusts font between min/max sizes to fit box with padding.
                         </p>
                     </div>
                 )}

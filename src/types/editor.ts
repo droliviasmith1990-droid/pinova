@@ -129,6 +129,10 @@ export interface TextElement extends BaseElement {
     autoFitText?: boolean;
     /** Maximum font size when auto-fit is enabled (caps the upper limit) */
     maxFontSize?: number;
+    /** Minimum font size when auto-fit is enabled (floors the lower limit) */
+    minFontSize?: number;
+    /** Internal padding for auto-fit text (prevents text from touching container edges) */
+    autoFitPadding?: number;
     // Dynamic field - now supports any field name (text1, text2, etc.)
     isDynamic: boolean;
     dynamicField?: string;

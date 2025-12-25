@@ -9,6 +9,7 @@ import * as fabric from 'fabric';
 import { Element, TextElement, ShapeElement, ImageElement } from '@/types/editor';
 import { convertToFabricStyles } from '@/lib/text/characterStyles';
 import { useEditorStore } from '@/stores/editorStore';
+import { calculateFitFontSize, AutoFitConfig } from '@/lib/canvas/textUtils';
 
 /**
  * Extended Fabric.js object with custom properties for async loading
@@ -47,86 +48,11 @@ function applyTextTransform(
     }
 }
 
-// Internal padding for auto-fit text (prevents text from touching container edges)
-const AUTOFIT_PADDING = 15;
+
 
 /**
- * Calculate the optimal font size to fit text within a container
- * Uses Fabric.js Textbox for ACCURATE measurement - IDENTICAL to server-side
- * Binary search finds the LARGEST font size that keeps text within bounds
- * 
- * Enhancements:
- * - 15px internal padding on all sides for visual breathing room
- * - Lower default maxFontSize (48px) for better visual consistency across pins
+ * Local calculateFitFontSize removed - imported from @/lib/canvas/textUtils
  */
-function calculateFitFontSize(
-    text: string,
-    containerWidth: number,
-    containerHeight: number,
-    fontFamily: string,
-    fontWeight: string | number = 400,
-    lineHeight: number = 1.2,
-    letterSpacing: number = 0,
-    maxFontSize: number = 48  // Lowered from 200 for visual balance
-): number {
-    if (!text || !containerWidth || !containerHeight) {
-        return 16;
-    }
-    
-    // Apply internal padding - text should not touch container edges
-    const paddedWidth = containerWidth - (AUTOFIT_PADDING * 2);
-    const paddedHeight = containerHeight - (AUTOFIT_PADDING * 2);
-    
-    // Ensure padded dimensions are positive
-    if (paddedWidth <= 0 || paddedHeight <= 0) return 16;
-    
-    const minSize = 8;
-    let low = minSize;
-    let high = maxFontSize;
-    let optimalSize = minSize;
-    
-    // Additional safety margin on padded height
-    const safePaddedHeight = paddedHeight - 5;
-    
-    /**
-     * Measure text height using Fabric.js Textbox
-     * CRITICAL: Settings MUST match rendering to get accurate height
-     * Uses paddedWidth for accurate measurement with internal padding
-     */
-    const measureHeight = (fontSize: number): number => {
-        const testTextbox = new fabric.Textbox(text, {
-            width: paddedWidth,  // Use padded width for measurement
-            fontSize: fontSize,
-            fontFamily: fontFamily,
-            fontWeight: fontWeight,
-            lineHeight: lineHeight,
-            charSpacing: letterSpacing * 10,
-            // NO splitByGrapheme - must match rendering settings
-        });
-        return testTextbox.height || 0;
-    };
-    
-    // Binary search: find the LARGEST font size that fits
-    for (let i = 0; i < 15; i++) {
-        const testSize = Math.floor((low + high) / 2);
-        const textHeight = measureHeight(testSize);
-        
-        if (textHeight <= safePaddedHeight) {  // Use safe padded height
-            // Text fits! Try larger
-            optimalSize = testSize;
-            low = testSize + 1;
-        } else {
-            // Text doesn't fit, try smaller
-            high = testSize - 1;
-        }
-        
-        if (low > high) break;
-    }
-    
-    console.log(`[AutoFit] "${text.substring(0, 30)}..." => ${optimalSize}px (container: ${containerWidth}x${containerHeight}, padded: ${paddedWidth}x${paddedHeight})`);
-    
-    return Math.max(minSize, Math.min(optimalSize, maxFontSize));
-}
 
 
 /**
@@ -151,19 +77,32 @@ export function createFabricObject(element: Element): fabric.FabricObject | null
                 displayText = applyTextTransform(displayText, textEl.textTransform);
             }
             
+            
             // Calculate font size - use auto-fit if enabled
             let fontSize = textEl.fontSize || 16;
             if (textEl.autoFitText && displayText && element.width && element.height) {
-                fontSize = calculateFitFontSize(
-                    displayText,
-                    element.width,
-                    element.height,
-                    textEl.fontFamily || 'Arial',
-                    textEl.fontWeight || 400,
-                    textEl.lineHeight || 1.2,
-                    textEl.letterSpacing || 0,
-                    textEl.maxFontSize || 200
-                );
+                const config: AutoFitConfig = {
+                    containerWidth: element.width,
+                    containerHeight: element.height,
+                    minFontSize: textEl.minFontSize || 8,
+                    maxFontSize: textEl.maxFontSize || 48,
+                    padding: textEl.autoFitPadding ?? 15
+                };
+
+                // Measure callback using Fabric.js Textbox
+                const measureHeight = (size: number): number => {
+                    const testTextbox = new fabric.Textbox(displayText, {
+                        width: config.containerWidth - (config.padding * 2), // Use padded width
+                        fontSize: size,
+                        fontFamily: textEl.fontFamily || 'Arial',
+                        fontWeight: textEl.fontWeight || 400,
+                        lineHeight: textEl.lineHeight || 1.2,
+                        charSpacing: (textEl.letterSpacing || 0) * 10,
+                    });
+                    return testTextbox.height || 0;
+                };
+
+                fontSize = calculateFitFontSize(displayText, config, measureHeight);
             }
             
             // Build textbox with ALL styling properties (matching engine.ts)
@@ -184,11 +123,20 @@ export function createFabricObject(element: Element): fabric.FabricObject | null
                 charSpacing: (textEl.letterSpacing || 0) * 10, // Fabric.js uses 1/1000 of em
                 underline: textEl.textDecoration === 'underline',
                 linethrough: textEl.textDecoration === 'line-through',
+                // Enable vertical scaling for text boxes
+                lockScalingY: false,
                 // NOTE: splitByGrapheme removed to prevent ugly mid-word breaks like "CHI-CKEN"
                 // Word-boundary wrapping is preferred for marketing text
             });
             // NOTE: clipPath removed - it caused display issues with Fabric.js 6.x
             // The calculateFitFontSize function already ensures text fits within container
+            
+            // Enable vertical resize controls (mt = middle-top, mb = middle-bottom)
+            // Fabric.js Textbox hides these by default since text auto-reflows
+            textbox.setControlsVisibility({
+                mt: true,  // middle-top handle
+                mb: true,  // middle-bottom handle
+            });
             
             // Apply shadow effect
             if (textEl.shadowColor && (textEl.shadowBlur || textEl.shadowOffsetX || textEl.shadowOffsetY)) {
@@ -501,16 +449,27 @@ export function syncElementToFabric(
             
             if (displayText) {
                 // Recalculate optimal font size for new dimensions
-                const optimalFontSize = calculateFitFontSize(
-                    displayText,
-                    newWidth,
-                    newHeight,
-                    fontFamily,
-                    storedEl.fontWeight || 400,
-                    lineHeight,
-                    storedEl.letterSpacing || 0,
-                    maxFontSize
-                );
+                const config: AutoFitConfig = {
+                    containerWidth: newWidth,
+                    containerHeight: newHeight,
+                    minFontSize: storedEl.minFontSize || 8,
+                    maxFontSize: maxFontSize,
+                    padding: storedEl.autoFitPadding ?? 15
+                };
+
+                const measureHeight = (size: number): number => {
+                    const testTextbox = new fabric.Textbox(displayText, {
+                        width: config.containerWidth - (config.padding * 2), // Use padded width
+                        fontSize: size,
+                        fontFamily: fontFamily,
+                        fontWeight: storedEl.fontWeight || 400,
+                        lineHeight: lineHeight,
+                        charSpacing: (storedEl.letterSpacing || 0) * 10,
+                    });
+                    return testTextbox.height || 0;
+                };
+
+                const optimalFontSize = calculateFitFontSize(displayText, config, measureHeight);
                 
                 console.log('[SyncAutoFit] Applied font size:', {
                     from: storedEl.fontSize,
@@ -522,6 +481,13 @@ export function syncElementToFabric(
                 batchedUpdates.fontSize = optimalFontSize;
                 // Also update the textbox width to match new container width
                 batchedUpdates.width = newWidth;
+                
+                // Enforce vertical resize controls and unlock scaling during updates
+                targetTextbox.setControlsVisibility({
+                    mt: true,
+                    mb: true
+                });
+                batchedUpdates.lockScalingY = false;
                 
                 // NOTE: We intentionally do NOT update storedElement.fontSize or the Zustand store
                 // The stored fontSize is the user's original setting, optimalFontSize is a DERIVED value
@@ -537,6 +503,15 @@ export function syncElementToFabric(
             }
         }
         
+        // ALWAYS Enforce vertical resize controls and unlock scaling for text
+        if (targetTextbox) {
+             targetTextbox.setControlsVisibility({
+                mt: true,
+                mb: true
+             });
+        }
+        batchedUpdates.lockScalingY = false;
+
         // Font properties
         if (textUpdates.fontWeight !== undefined) {
             batchedUpdates.fontWeight = textUpdates.fontWeight;
@@ -677,16 +652,27 @@ export function syncElementToFabric(
                 const lineHeight = storedEl.lineHeight || 1.2;
                 const maxFontSize = storedEl.maxFontSize || 200;
                 
-                const optimalFontSize = calculateFitFontSize(
-                    displayText,
+                const config: AutoFitConfig = {
                     containerWidth,
                     containerHeight,
-                    fontFamily,
-                    storedEl.fontWeight || 400,
-                    lineHeight,
-                    storedEl.letterSpacing || 0,
-                    maxFontSize
-                );
+                    minFontSize: storedEl.minFontSize || 8,
+                    maxFontSize,
+                    padding: storedEl.autoFitPadding ?? 15
+                };
+
+                const measureHeight = (size: number): number => {
+                    const testTextbox = new fabric.Textbox(displayText, {
+                        width: config.containerWidth - (config.padding * 2),
+                        fontSize: size,
+                        fontFamily: fontFamily,
+                        fontWeight: storedEl.fontWeight || 400,
+                        lineHeight: lineHeight,
+                        charSpacing: (storedEl.letterSpacing || 0) * 10,
+                    });
+                    return testTextbox.height || 0;
+                };
+
+                const optimalFontSize = calculateFitFontSize(displayText, config, measureHeight);
                 
                 console.log('[AutoFit] Text content changed, recalculating font:', {
                     text: displayText.substring(0, 30) + '...',

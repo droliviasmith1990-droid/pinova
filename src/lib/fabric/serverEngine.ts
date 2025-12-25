@@ -13,6 +13,7 @@ import { Element, TextElement, ImageElement, ShapeElement, FrameElement } from '
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { calculateFitFontSize, AutoFitConfig } from '../canvas/textUtils';
 
 // CRITICAL: Configure FontConfig for serverless environment (Vercel)
 // Without this, you get: "Fontconfig error: Cannot load default config file"
@@ -111,9 +112,9 @@ function initializeFonts(): void {
                     style: style,
                 });
                 registeredFonts.add(fontKey);
-                console.log(`[ServerEngine] Registered font: ${familyName} (${weight}, ${style})`);
+                console.log(`[ServerEngine:Check:Reg] Registered font: ${familyName} (${weight}, ${style}) from ${file}`);
             } catch (err) {
-                console.error(`[ServerEngine] Failed to register font ${file}:`, err);
+                console.error(`[ServerEngine:Error:Reg] Failed to register font ${file}:`, err);
             }
         }
     } catch (err) {
@@ -124,27 +125,121 @@ function initializeFonts(): void {
 // Initialize fonts on module load
 initializeFonts();
 
+        return false;
+    }
+}
+
+/**
+ * Download a Google Font from the official GitHub repository (raw content)
+ * Fallback strategy for serverless environments where local files are missing
+ */
+async function downloadGoogleFont(family: string, weight: string = 'normal', style: string = 'normal'): Promise<boolean> {
+    const fontKey = `${family}-${weight}-${style}`;
+    if (registeredFonts.has(fontKey)) return true;
+
+    // Map common font names to Google Fonts GitHub directory names (usually lowercase, no spaces)
+    // Most follow the pattern: "Open Sans" -> "opensans"
+    const repoName = family.toLowerCase().replace(/\s+/g, '');
+    
+    // Map usage weights to filename patterns
+    // This is a heuristic; actual filenames vary but this covers 90% of cases in OFL
+    let filenamePart = '-Regular';
+    if (weight === 'bold') filenamePart = '-Bold';
+    else if (weight === '300') filenamePart = '-Light';
+    else if (weight === '500') filenamePart = '-Medium';
+    else if (weight === '700') filenamePart = '-Bold';
+    else if (weight === '900') filenamePart = '-Black';
+    else if (weight === '100') filenamePart = '-Thin';
+    
+    if (style === 'italic') {
+        if (filenamePart === '-Regular') filenamePart = '-Italic';
+        else filenamePart += 'Italic';
+    }
+
+    // Construct common filename variants to try
+    // Google Fonts repo structure: ofl/fontname/FontName-Variant.ttf
+    const family PascalCase = family.replace(/\s+/g, ''); // "Open Sans" -> "OpenSans"
+    const possibleFilenames = [
+        `${family PascalCase}${filenamePart}.ttf`,       // OpenSans-Regular.ttf
+        `${family}${filenamePart}.ttf`,                   // Open Sans-Regular.ttf
+        `${repoName}${filenamePart}.ttf`                  // opensans-Regular.ttf
+    ];
+
+    const baseUrl = `https://github.com/google/fonts/raw/main/ofl/${repoName}`;
+
+    console.log(`[ServerEngine:Font] Attempting dynamic download for ${family} (${weight}, ${style})...`);
+
+    // Try to find a valid URL
+    for (const filename of possibleFilenames) {
+        const url = `${baseUrl}/${filename}`;
+        try {
+            const success = await loadFontFromUrl(url, family);
+            if (success) {
+                console.log(`[ServerEngine:Font] SUCCESS: Downloaded ${family} from ${url}`);
+                
+                // CRITICAL: Register specific weight/style mapping
+                // loadFontFromUrl registers as 'normal'/'normal' by default if we don't handle it
+                // We need to ensure the system knows this specific requested weight is now available
+                registeredFonts.add(fontKey);
+                return true;
+            }
+        } catch (e) {
+            // Continue to next filename variant
+        }
+    }
+
+    console.warn(`[ServerEngine:Font] FAILED to download ${family}. Tried variants: ${possibleFilenames.join(', ')}`);
+    return false;
+}
+
 /**
  * Get font with fallback - returns original font if registered, otherwise fallback
+ * ENHANCED: Attempts dynamic download if font is missing
  */
-function getServerSafeFont(fontFamily: string): string {
+async function getServerSafeFont(fontFamily: string, weight: string = 'normal', style: string = 'normal'): Promise<string> {
     // Check if font is registered
     const baseFamily = fontFamily.split(',')[0].trim().replace(/["']/g, '');
     
-    // Check for bundled fonts (pattern: familyName-weight-style)
-    if (registeredFonts.has(`${baseFamily}-normal-normal`) || 
-        registeredFonts.has(`${baseFamily}-bold-normal`)) {
-        console.log(`[ServerEngine] Using registered font: "${baseFamily}"`);
-        return baseFamily;
+    // Check for bundled/registered fonts
+    // Normalize weight/style to match registration keys
+    const normWeight = weight === '700' || weight === 'bold' ? 'bold' : 'normal';
+    const normStyle = style === 'italic' ? 'italic' : 'normal';
+    
+    const specificKey = `${baseFamily}-${normWeight}-${normStyle}`;
+    const genericKey = `${baseFamily}-normal-normal`;
+
+    if (registeredFonts.has(specificKey)) return baseFamily;
+    if (registeredFonts.has(genericKey)) {
+        // If we have regular but need bold, we can usually let OS/Canvas synthesize it, 
+        // OR we should try to download the bold version
+        if (normWeight === 'bold' && !registeredFonts.has(`${baseFamily}-bold-normal`)) {
+             console.log(`[ServerEngine] Have Regular for "${baseFamily}", attempting to fetch Bold...`);
+             // Fall through to download logic
+        } else {
+             return baseFamily;
+        }
     }
     
     // Check for fonts loaded from URLs (pattern: familyName-url)
     if (registeredFonts.has(`${baseFamily}-url`)) {
-        console.log(`[ServerEngine] Using custom font loaded from URL: "${baseFamily}"`);
         return baseFamily;
     }
+
+    // [NEW] Attempt Dynamic Download
+    // Only try for likely standard fonts (not system ones)
+    const systemFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana', 'Georgia', 'sans-serif', 'serif'];
+    if (!systemFonts.includes(baseFamily)) {
+        const downloaded = await downloadGoogleFont(baseFamily, normWeight, normStyle);
+        if (downloaded) return baseFamily;
+        
+        // If bold failed, try downloading regular as fallback
+        if (normWeight !== 'normal') {
+             const downloadedReg = await downloadGoogleFont(baseFamily, 'normal', normStyle);
+             if (downloadedReg) return baseFamily;
+        }
+    }
     
-    // Fallback to system fonts
+    // Fallback to system fonts logic...
     const fallbacks: Record<string, string> = {
         'Roboto': 'sans-serif',
         'Open Sans': 'sans-serif',
@@ -206,14 +301,22 @@ async function loadFontFromUrl(fontUrl: string, familyName: string): Promise<boo
         
         // Register font with node-canvas
         // IMPORTANT: Specify weight and style for proper glyph rendering
+        // Extract basic weight/style from filename if possible to hint registerFont
+        let weightStr = 'normal';
+        let styleStr = 'normal';
+        
+        const lowerUrl = fontUrl.toLowerCase();
+        if (lowerUrl.includes('bold')) weightStr = 'bold';
+        if (lowerUrl.includes('italic')) styleStr = 'italic';
+
         registerFont(tempPath, { 
             family: familyName,
-            weight: 'normal',  // Let font's native weight through
-            style: 'normal'    // Let font's native style through
+            weight: weightStr,
+            style: styleStr
         });
         registeredFonts.add(fontKey);
         
-        console.log(`[ServerEngine] Successfully loaded font from URL: ${familyName}`);
+        console.log(`[ServerEngine:Check:Net] Successfully loaded font from URL: ${familyName}`);
         return true;
     } catch (error) {
         console.error(`[ServerEngine] Failed to load font from URL:`, error);
@@ -430,9 +533,6 @@ function applyTextTransform(text: string, transform?: 'none' | 'uppercase' | 'lo
     }
 }
 
-// Internal padding for auto-fit text (prevents text from touching container edges)
-const AUTOFIT_PADDING = 15;
-
 /**
  * Calculate optimal font size to fit text within container (server-side)
  * Uses Fabric.js Textbox for ACCURATE measurement - same as client-side
@@ -442,82 +542,9 @@ const AUTOFIT_PADDING = 15;
  * - 15px internal padding on all sides for visual breathing room
  * - Lower default maxFontSize (48px) for better visual consistency across pins
  */
-function calculateFitFontSizeServer(
-    text: string,
-    containerWidth: number,
-    containerHeight: number,
-    fontFamily: string,
-    fontWeight: string | number = 400,
-    lineHeight: number = 1.2,
-    letterSpacing: number = 0,
-    maxFontSize: number = 48  // Lowered from 200 for visual balance
-): number {
-    if (!text || !containerWidth || !containerHeight) return 16;
-    
-    // Apply internal padding - text should not touch container edges
-    const paddedWidth = containerWidth - (AUTOFIT_PADDING * 2);
-    const paddedHeight = containerHeight - (AUTOFIT_PADDING * 2);
-    
-    // Ensure padded dimensions are positive
-    if (paddedWidth <= 0 || paddedHeight <= 0) return 16;
-    
-    const minSize = 8;
-    let low = minSize;
-    let high = maxFontSize;
-    let optimalSize = minSize;
-    
-    // Additional safety margin on padded height
-    const safePaddedHeight = paddedHeight - 5;
-    
-    /**
-     * Measure text height using Fabric.js Textbox
-     * CRITICAL: Settings MUST match rendering to get accurate height
-     * Uses paddedWidth for accurate measurement with internal padding
-     */
-    const measureHeight = (fontSize: number): number => {
-        const testTextbox = new Textbox(text, {
-            width: paddedWidth,  // Use padded width for measurement
-            fontSize: fontSize,
-            fontFamily: fontFamily,
-            fontWeight: fontWeight,
-            lineHeight: lineHeight,
-            charSpacing: letterSpacing * 10,
-            // NO splitByGrapheme - must match rendering settings
-        });
-        return testTextbox.height || 0;
-    };
-    
-    // Binary search: find the LARGEST font size that fits
-    for (let i = 0; i < 15; i++) {
-        const testSize = Math.floor((low + high) / 2);
-        const textHeight = measureHeight(testSize);
-        
-        if (textHeight <= safePaddedHeight) {  // Use safe padded height
-            // Text fits! Try larger
-            optimalSize = testSize;
-            low = testSize + 1;
-        } else {
-            // Text doesn't fit, try smaller
-            high = testSize - 1;
-        }
-        
-        if (low > high) break;
-    }
-    
-    // Verification: check actual height at optimal size
-    const finalHeight = measureHeight(optimalSize);
-    console.log(`[ServerEngine] AutoFit: "${text.substring(0, 30)}..." => ${optimalSize}px (textHeight: ${finalHeight}px, paddedHeight: ${paddedHeight}px, safe: ${safePaddedHeight}px)`);
-    
-    // EXTRA SAFETY: If still overflowing, reduce by 1px
-    if (finalHeight > safePaddedHeight && optimalSize > minSize) {
-        const reducedSize = optimalSize - 1;
-        const reducedHeight = measureHeight(reducedSize);
-        console.log(`[ServerEngine] AutoFit: OVERFLOW DETECTED! Reducing ${optimalSize}px -> ${reducedSize}px (height: ${reducedHeight}px)`);
-        return reducedSize;
-    }
-    
-    return Math.max(minSize, Math.min(optimalSize, maxFontSize));
-}
+/**
+ * Local calculateFitFontSizeServer removed - imported from ../canvas/textUtils
+ */
 
 /**
  * Render a single element to the canvas
@@ -564,22 +591,44 @@ async function renderElement(
         }
 
         // CRITICAL: Get safe font FIRST, use same font for measurement AND rendering
-        const safeFontFamily = getServerSafeFont(textEl.fontFamily || 'Arial');
+        // [UPDATE] Await the font resolution since it might involve a download
+        const fontWeight = textEl.fontWeight || (textEl.fontStyle?.includes('bold') ? 'bold' : 'normal');
+        const fontStyle = textEl.fontStyle?.includes('italic') ? 'italic' : 'normal';
+        
+        const safeFontFamily = await getServerSafeFont(textEl.fontFamily || 'Arial', String(fontWeight), fontStyle);
         
         // Calculate font size - use auto-fit if enabled
         let fontSize = textEl.fontSize || 16;
+        
+        // DEBUG: Log autoFitText status
+        console.log(`[ServerEngine] TEXT: autoFitText=${textEl.autoFitText}, width=${textEl.width}, height=${textEl.height}`);
+        
         if (textEl.autoFitText && text && textEl.width && textEl.height) {
-            fontSize = calculateFitFontSizeServer(
-                text,
-                textEl.width,
-                textEl.height,
-                safeFontFamily,  // Use SAME font as rendering
-                textEl.fontWeight || 400,
-                textEl.lineHeight || 1.2,
-                textEl.letterSpacing || 0,
-                textEl.maxFontSize || 200
-            );
-            console.log(`[ServerEngine] TEXT: Auto-fit font size calculated: ${fontSize} (original: ${textEl.fontSize}, max: ${textEl.maxFontSize})`);
+            const config: AutoFitConfig = {
+                containerWidth: textEl.width,
+                containerHeight: textEl.height,
+                minFontSize: textEl.minFontSize || 8,
+                maxFontSize: textEl.maxFontSize || 48,
+                padding: textEl.autoFitPadding ?? 15
+            };
+            
+            // Log font being used for calc to catch mismatches
+            console.log(`[ServerEngine:Diagnostic] AutoFit Calculation: Font "${safeFontFamily}" (REQ: "${textEl.fontFamily}")`);
+
+            const measureHeight = (size: number): number => {
+                const testTextbox = new Textbox(text, {
+                    width: config.containerWidth - (config.padding * 2),
+                    fontSize: size,
+                    fontFamily: safeFontFamily,
+                    fontWeight: textEl.fontWeight || 400,
+                    lineHeight: textEl.lineHeight || 1.2,
+                    charSpacing: (textEl.letterSpacing || 0) * 10,
+                });
+                return testTextbox.height || 0;
+            };
+
+            fontSize = calculateFitFontSize(text, config, measureHeight);
+            console.log(`[ServerEngine] TEXT: Auto-fit font size calculated: ${fontSize} (original: ${textEl.fontSize}, max: ${textEl.maxFontSize || 48})`);
         }
 
         const textbox = new Textbox(text, {

@@ -65,6 +65,7 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
         if (!manager || !isCanvasReady) return;
 
         // Handle scaling - apply ghost effect during resize
+        // For ALL TEXT: prevent scaling transform, resize dimensions directly
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const handleScaling = (e: any) => {
             setIsResizing(true);
@@ -73,7 +74,45 @@ export function EditorCanvasV2({ containerWidth, containerHeight }: EditorCanvas
             
             activeObjectRef.current = target;
             
-            // Apply ghost effect during scaling
+            // Check if this is a text element (regardless of auto-fit setting)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const elementId = (target as any).id;
+            const storeState = useEditorStore.getState();
+            const element = storeState.elements.find(el => el.id === elementId);
+            
+            if (element?.type === 'text') {
+                // For ALL text: update dimensions directly instead of scaling
+                // This prevents the stretched appearance
+                const scaleX = target.scaleX || 1;
+                const scaleY = target.scaleY || 1;
+                const baseWidth = target.width || element.width || 100;
+                const baseHeight = target.height || element.height || 50;
+                
+                // Calculate new dimensions
+                const newWidth = Math.max(50, Math.round(baseWidth * scaleX));
+                const newHeight = Math.max(30, Math.round(baseHeight * scaleY));
+                
+                // Update dimensions without scaling
+                target.set({
+                    scaleX: 1,
+                    scaleY: 1,
+                    width: newWidth,
+                    height: newHeight,
+                });
+                target.setCoords();
+                
+                // Update store - for auto-fit text, this triggers font recalculation
+                // For regular text, just updates box dimensions
+                storeState.updateElement(elementId, {
+                    width: newWidth,
+                    height: newHeight,
+                });
+                
+                (manager as any).canvas?.requestRenderAll();
+                return; // Skip opacity effect for text
+            }
+            
+            // Apply ghost effect during scaling for other elements (shapes, images)
             target.set({ opacity: 0.5 });
             (manager as any).canvas?.requestRenderAll();
         };
