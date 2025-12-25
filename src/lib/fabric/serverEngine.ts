@@ -14,9 +14,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 
-// CRITICAL: Force node-canvas to use FontConfig for proper font rendering
-// Without this, custom fonts will render as box characters (▯▯▯)
-// See: https://github.com/Automattic/node-canvas/issues/1779
+// CRITICAL: Configure FontConfig for serverless environment (Vercel)
+// Without this, you get: "Fontconfig error: Cannot load default config file"
+// This causes custom fonts to render as box characters
+
+// Point FontConfig to our custom config file in project root
+if (!process.env.FONTCONFIG_FILE) {
+    process.env.FONTCONFIG_FILE = path.resolve(process.cwd(), 'fonts.conf');
+}
+
+// Force use of FontConfig backend
 if (!process.env.PANGOCAIRO_BACKEND) {
     process.env.PANGOCAIRO_BACKEND = 'fontconfig';
 }
