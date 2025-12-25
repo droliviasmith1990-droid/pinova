@@ -156,9 +156,9 @@ async function downloadGoogleFont(family: string, weight: string = 'normal', sty
 
     // Construct common filename variants to try
     // Google Fonts repo structure: ofl/fontname/FontName-Variant.ttf
-    const family PascalCase = family.replace(/\s+/g, ''); // "Open Sans" -> "OpenSans"
+    const familyPascalCase = family.replace(/\s+/g, ''); // "Open Sans" -> "OpenSans"
     const possibleFilenames = [
-        `${family PascalCase}${filenamePart}.ttf`,       // OpenSans-Regular.ttf
+        `${familyPascalCase}${filenamePart}.ttf`,       // OpenSans-Regular.ttf
         `${family}${filenamePart}.ttf`,                   // Open Sans-Regular.ttf
         `${repoName}${filenamePart}.ttf`                  // opensans-Regular.ttf
     ];
