@@ -30,17 +30,31 @@ export function detectElementChange(
     }
 
     // Build ID maps for fast lookup
-    const prevIds = new Set(previous.map(el => el.id));
-    const currIds = new Set(current.map(el => el.id));
+    // Optimization: Use Map for O(1) lookup of full element objects instead of O(N) find()
+    const prevMap = new Map<string, Element>();
+    for (const el of previous) {
+        prevMap.set(el.id, el);
+    }
+
+    const currIds = new Set<string>();
+    for (const el of current) {
+        currIds.add(el.id);
+    }
 
     // Detect additions and removals
-    const added = current
-        .filter(el => !prevIds.has(el.id))
-        .map(el => el.id);
+    const added: string[] = [];
+    for (const el of current) {
+        if (!prevMap.has(el.id)) {
+            added.push(el.id);
+        }
+    }
 
-    const removed = previous
-        .filter(el => !currIds.has(el.id))
-        .map(el => el.id);
+    const removed: string[] = [];
+    for (const el of previous) {
+        if (!currIds.has(el.id)) {
+            removed.push(el.id);
+        }
+    }
 
     // If there are additions or removals, it's a list change
     if (added.length > 0 || removed.length > 0) {
@@ -61,7 +75,7 @@ export function detectElementChange(
     const modified: string[] = [];
 
     for (const currEl of current) {
-        const prevEl = previous.find(el => el.id === currEl.id);
+        const prevEl = prevMap.get(currEl.id);
         if (!prevEl) continue;
 
         // Check if any properties changed
