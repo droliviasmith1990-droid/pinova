@@ -343,6 +343,21 @@ function extractFontsFromElements(elements: Element[]): string[] {
 // Cache for font URLs fetched from Supabase
 const fontUrlCache = new Map<string, string>();
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🚀 SERVER-SIDE CACHES - Reuse fetched images across renders
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// URL → FabricImage object (populated on first load, cloned for reuse)
+// We use a single level of caching here for simplicity and speed
+const fabricImageCache = new Map<string, FabricImage>();
+// Track in-flight requests to prevent "thundering herd" (duplicate fetches for same URL in parallel batch)
+const pendingImageLoads = new Map<string, Promise<FabricImage | null>>();
+
+export function clearServerImageCache(): void {
+    fabricImageCache.clear();
+    pendingImageLoads.clear();
+    // Don't clear fonts as they are expensive to reload
+}
+
 /**
  * Load custom fonts from Supabase for template elements
  * Fetches font URLs from database and registers them with node-canvas
@@ -475,47 +490,85 @@ function getDynamicImageUrl(element: ImageElement, rowData: Record<string, strin
 }
 
 /**
- * Load image from URL (server-side)
+ * Load image from URL (server-side) with CACHING and REQUEST COALESCING
  */
 async function loadImageServer(url: string): Promise<FabricImage | null> {
     if (!url) return null;
-    
-    try {
-        // Decode proxy URL if present
-        let fetchUrl = url;
-        if (url.startsWith('/api/proxy-image')) {
-            const urlParams = new URLSearchParams(url.split('?')[1] || '');
-            const originalUrl = urlParams.get('url');
-            if (originalUrl) {
-                fetchUrl = decodeURIComponent(originalUrl);
-            }
+
+    // 1. CHECK RESULT CACHE
+    const cachedImage = fabricImageCache.get(url);
+    if (cachedImage) {
+        if (DEBUG) console.log(`[ServerEngine] Cache HIT for image: ${url.substring(0, 60)}`);
+        try {
+            return await cachedImage.clone();
+        } catch (e) {
+            console.warn(`[ServerEngine] Failed to clone cached image, reloading: ${url}`);
         }
-        
-        // Fetch image data
-        const response = await fetch(fetchUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/*',
-            },
-        });
-        
-        if (!response.ok) {
-            console.error(`[ServerEngine] Failed to fetch image: ${response.status} - ${fetchUrl.substring(0, 80)}`);
-            return null;
-        }
-        
-        const arrayBuffer = await response.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString('base64');
-        const contentType = response.headers.get('content-type') || 'image/png';
-        const dataUrl = `data:${contentType};base64,${base64}`;
-        
-        // Create FabricImage from data URL
-        const img = await FabricImage.fromURL(dataUrl);
-        return img;
-    } catch (error) {
-        console.error(`[ServerEngine] Image load error:`, error);
-        return null;
     }
+
+    // 2. CHECK PENDING REQUESTS (Request Coalescing)
+    if (pendingImageLoads.has(url)) {
+        if (DEBUG) console.log(`[ServerEngine] Coalescing request for image: ${url.substring(0, 60)}`);
+        const img = await pendingImageLoads.get(url);
+        return img ? await img.clone() : null;
+    }
+    
+    // 3. START NEW LOAD
+    const loadPromise = (async () => {
+        try {
+            if (DEBUG) console.log(`[ServerEngine] Cache MISS - Fetching image: ${url.substring(0, 60)}`);
+
+            // Decode proxy URL if present
+            let fetchUrl = url;
+            if (url.startsWith('/api/proxy-image')) {
+                const urlParams = new URLSearchParams(url.split('?')[1] || '');
+                const originalUrl = urlParams.get('url');
+                if (originalUrl) {
+                    fetchUrl = decodeURIComponent(originalUrl);
+                }
+            }
+
+            // Fetch image data
+            const response = await fetch(fetchUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'image/*',
+                },
+            });
+
+            if (!response.ok) {
+                console.error(`[ServerEngine] Failed to fetch image: ${response.status} - ${fetchUrl.substring(0, 80)}`);
+                return null;
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+            const base64 = Buffer.from(arrayBuffer).toString('base64');
+            const contentType = response.headers.get('content-type') || 'image/png';
+            const dataUrl = `data:${contentType};base64,${base64}`;
+
+            // Create FabricImage from data URL
+            const img = await FabricImage.fromURL(dataUrl);
+
+            // POPULATE CACHE
+            if (img) {
+                fabricImageCache.set(url, img);
+            }
+
+            return img;
+        } catch (error) {
+            console.error(`[ServerEngine] Image load error:`, error);
+            return null;
+        } finally {
+            // Remove from pending map once done (success or fail)
+            pendingImageLoads.delete(url);
+        }
+    })();
+
+    pendingImageLoads.set(url, loadPromise);
+
+    // Return the result of this promise (cloned)
+    const result = await loadPromise;
+    return result ? await result.clone() : null;
 }
 
 /**
