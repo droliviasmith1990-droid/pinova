@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
+import { useElementSize } from "@/hooks/useElementSize";
 import {
   MoreVertical,
   Play,
@@ -41,16 +43,55 @@ interface CampaignsTableProps {
   onRefresh?: () => void;
 }
 
+// Data passed to the row component
+interface RowData {
+    campaigns: Campaign[];
+    selectedIds: string[];
+    onSelect: (id: string, checked: boolean) => void;
+    onRefresh?: () => void;
+}
+
+// Virtualized Row Component (Defined outside to prevent re-creation)
+const VirtualRow = ({ index, style, data }: ListChildComponentProps<RowData>) => {
+    const { campaigns, selectedIds, onSelect, onRefresh } = data;
+    const campaign = campaigns[index];
+    // Safety check for empty slots/loading
+    if (!campaign) return null;
+
+    const isSelected = selectedIds.includes(campaign.id);
+
+    return (
+        <div style={style}>
+            <CampaignRow
+                key={campaign.id}
+                campaign={campaign}
+                isSelected={isSelected}
+                onSelect={(checked) => onSelect(campaign.id, checked)}
+                onRefresh={onRefresh}
+            />
+        </div>
+    );
+};
+
 export function CampaignsTable({ campaigns, onRefresh }: CampaignsTableProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const { ref: containerRef, width, height } = useElementSize<HTMLDivElement>();
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedIds(campaigns.map(c => c.id));
     } else {
       setSelectedIds([]);
+    }
+  };
+
+  const handleRowSelect = (id: string, checked: boolean) => {
+    if (checked) {
+        setSelectedIds(prev => [...prev, id]);
+    } else {
+        setSelectedIds(prev => prev.filter(selectedId => selectedId !== id));
     }
   };
 
@@ -61,8 +102,6 @@ export function CampaignsTable({ campaigns, onRefresh }: CampaignsTableProps) {
 
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // In a real app, this would be: await api.campaigns.bulkUpdate(selectedIds, bulkAction);
     
     switch (bulkAction) {
       case 'pause':
@@ -94,6 +133,14 @@ export function CampaignsTable({ campaigns, onRefresh }: CampaignsTableProps) {
     setBulkAction('');
     setSelectedIds([]);
   };
+
+  // Memoize itemData to prevent unnecessary row re-renders
+  const itemData = useMemo(() => ({
+      campaigns,
+      selectedIds,
+      onSelect: handleRowSelect,
+      onRefresh
+  }), [campaigns, selectedIds, onRefresh]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full">
@@ -169,8 +216,12 @@ export function CampaignsTable({ campaigns, onRefresh }: CampaignsTableProps) {
         </div>
       </div>
 
-      {/* Table Rows */}
-      <div className="divide-y divide-gray-100 overflow-y-auto custom-scrollbar flex-1 bg-white">
+      {/* Table Rows - Virtualized */}
+      <div
+        ref={containerRef}
+        className="divide-y divide-gray-100 flex-1 bg-white custom-scrollbar"
+        style={{ minHeight: '300px' }} // Ensure minimum height for observation
+      >
         {campaigns.length === 0 ? (
            <div className="flex flex-col items-center justify-center py-12 text-center text-gray-500">
                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -181,21 +232,18 @@ export function CampaignsTable({ campaigns, onRefresh }: CampaignsTableProps) {
                <Link href="/dashboard/campaigns/new" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Create Campaign</Link>
            </div>
         ) : (
-            campaigns.map(campaign => (
-            <CampaignRow
-                key={campaign.id}
-                campaign={campaign}
-                isSelected={selectedIds.includes(campaign.id)}
-                onSelect={(checked) => {
-                if (checked) {
-                    setSelectedIds([...selectedIds, campaign.id]);
-                } else {
-                    setSelectedIds(selectedIds.filter(id => id !== campaign.id));
-                }
-                }}
-                onRefresh={onRefresh}
-            />
-            ))
+            width > 0 && height > 0 && (
+                <List
+                    className="custom-scrollbar"
+                    height={height}
+                    itemCount={campaigns.length}
+                    itemSize={76} // Approximate row height (4rem + padding + border)
+                    width={width}
+                    itemData={itemData}
+                >
+                    {VirtualRow}
+                </List>
+            )
         )}
       </div>
     </div>
@@ -229,7 +277,7 @@ function CampaignRow({ campaign, isSelected, onSelect, onRefresh }: CampaignRowP
   return (
     <div
       className={cn(
-        "grid grid-cols-[40px_2fr_1fr_1fr_1fr_60px] gap-4 px-6 py-4 hover:bg-gray-50 transition-colors items-center group",
+        "grid grid-cols-[40px_2fr_1fr_1fr_1fr_60px] gap-4 px-6 py-4 hover:bg-gray-50 transition-colors items-center group h-[76px]",
         isSelected && "bg-blue-50/50"
       )}
     >
