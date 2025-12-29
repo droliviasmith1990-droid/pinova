@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
     DragDropContext,
     Droppable,
@@ -35,7 +35,10 @@ export function LayersPanel() {
     const reorderElements = useEditorStore((s) => s.reorderElements);
 
     // Sort by zIndex descending (top to bottom = front to back)
-    const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+    // Memoized to prevent re-sorting on every render (e.g. selection changes)
+    const sortedElements = useMemo(() => {
+        return [...elements].sort((a, b) => b.zIndex - a.zIndex);
+    }, [elements]);
 
     // Memoized callbacks for LayerItem
     const handleSaveHistory = useCallback(() => {
